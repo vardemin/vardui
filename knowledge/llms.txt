@@ -1,0 +1,127 @@
+# Vard — cheat sheet (complete language + tooling reference)
+
+Vard is a declarative, statically typed UI language. Files: `*.vard`. All files in a
+project share one namespace (no imports). The app root is `view App`.
+
+## Loop
+1. edit .vard  2. `vard check --fix` (applies machine fixes, prints the rest)
+3. `vard run --do "ACTIONS"` (headless; prints tree / diffs)  4. `vard test`
+Never guess UI state: read `tree`. Never guess sizes: run `why SEL`.
+
+## Declarations (top level)
+struct Todo { id: Int, title: String, done: Bool = false }   // fields `name: Type [= default]`
+enum Filter { all, active, done }                            // values: .all .active .done
+const maxItems = 50
+fn total(xs: [Int]) -> Int { return xs.sum() }               // no `-> T` = returns nothing
+extern fn haptic(kind: String)                               // native call (see Native)
+theme { brand: #7C3AED, primary: #7C3AED }                   // add/override color tokens
+theme dark { brand: #C4B5FD }                                // dark-mode values
+view Name(params) { members }
+
+## Types
+Int Float String Bool Color  [T] (list)  T? (optional)  fn(A, B) -> R
+Int converts to Float implicitly; nothing else converts. Int / Int truncates.
+Literals: 42  3.5  "text {expr}"  true false nil  #RGB #RRGGBB #RRGGBBAA  [1, 2]
+Escapes in strings: \n \t \" \\ \{ \}
+
+## Views
+view Card(title: String, onTap: fn() = {}, bind value: Bool, content: slot) {
+  state count = 0                      // reactive mutable state (init runs once)
+  state items: [Todo] = []             // annotate when the init is [] or nil
+  let doubled = count * 2              // derived; recomputes automatically, read-only
+  fn inc() { count += 1 }              // can read/write state
+  Column(gap: 8) {                     // then exactly the UI tree
+    Text(title)
+    content                            // a bare lowercase name inserts the `slot` param
+  }
+}
+Params: `name: Type [= default]` read-only; `bind name: Type` two-way (caller passes a
+mutable place, e.g. `Checkbox(value: todo.done)`); `name: slot` = children block.
+First argument may be positional (first non-slot param); the rest are `name: value`.
+Any view use also accepts outer layout props: width height minWidth minHeight maxWidth
+grow alignSelf id opacity (applied to the view's root element).
+Order inside a view: state / let / fn members, then elements. No statements in the tree.
+
+## UI tree
+Element(args) { children }      // braces only for elements that take children
+if cond { ... } else if c2 { ... } else { ... }
+for t in todos by t.id { ... }  // `by` = stable unique key (always use for structs with id)
+for t, i in todos by t.id { ... }  // i = index (Int)
+for i in range(0, 5) { ... }
+
+## Expressions
++ - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback   x! (unwrap)
+"Count: {n}" (interpolation; `+` joins only String+String)   list[i]   s.field
+.name  enum variant or color token, resolved from the expected type (prop, typed var, `x == .all`)
+Lambdas: x => x.done   (a, b) => a + b   { stmts } (no params; used for handlers)
+Handlers: `onTap: add` (fn reference) or `onTap: { count += 1 }` (block lambda)
+No: self/this, ?., ++/--, ===, semicolons, imports, classes, modifier chains, `@State`.
+
+## Statements (fn bodies, handlers)
+let x = 1 (immutable)  var y = 2 (mutable)  x = v  x += v  x -= v
+if c { } else { }   for x in list { }   return v   print(a, b) (to the log)
+Builtins: range(a, b) -> [Int] (a..b-1), min(a, b), max(a, b), print(...)
+
+## What is mutable
+state, bind params, var locals, fields/elements of those (`todos[i].done = true`,
+`profile.name = "x"`), and the loop item of a `for` directly over state
+(`for t in todos by t.id { Checkbox(value: t.done) }`). Params, let, and items of a
+computed list (`for t in todos.filter(...)`) are read-only — update the state by id:
+`todos.removeWhere(x => x.id == t.id)`. Values are copied, never aliased.
+
+## Members
+String: count isEmpty | trim() upper() lower() contains(s) startsWith(s) endsWith(s)
+        split(sep) -> [String]  toInt() -> Int?  toFloat() -> Float?
+Int: toFloat() toString() abs()     Float: toInt() round() floor() ceil() abs() fixed(digits) -> String
+List: count isEmpty first last (T?) | contains(x) indexOf(x) -> Int? map(f) filter(f) find(f) -> T?
+      any(f) all(f) sum() join(sep) sortedBy(key) reversed()
+      in place (mutable lists only): append(x) insert(i, x) removeAt(i) remove(x) removeWhere(f) clear()
+Struct: construct `Todo(id: 1, title: "A")` (defaults may be omitted); read `t.title`.
+
+## Built-in elements (units: dp)
+Column / Row   gap align justify      flex containers (vertical / horizontal)
+Stack          align justify          children overlap; z-order = source order; `grow` child fills height
+Scroll         gap align              vertical scrolling column; give it a bounded height (`grow: 1`)
+Text(text)     style size weight color textAlign maxLines strike   wraps to available width
+Input          value (bind String) placeholder onSubmit onChange(fn(String)) secure size color
+Image(src)     fit
+Spacer         flexible empty space (grow: 1 by default)
+align (cross axis): .start .center .end .stretch (default)
+justify (main axis): .start (default) .center .end .between .around .evenly
+style: .display 34 .title 24 .heading 18 .body 16 (default) .label 15 bold .caption 13
+weight: .regular .medium .bold   textAlign: .start .center .end   fit: .cover .contain .fill
+Common props (all elements): width height minWidth minHeight maxWidth grow padding paddingX
+paddingY paddingTop paddingBottom paddingLeft paddingRight background radius border borderColor
+opacity alignSelf onTap id role label checked enabled
+role: .none .button .checkbox .switch .heading .link .image  (accessibility + inspection)
+id: "name" → stable test handle `#name`.
+
+## Color tokens (light/dark automatically)
+.background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear
+Use .text/.muted on .background/.surface, .onPrimary on .primary. Custom: `theme { brand: #... }`.
+
+## Std views (source: `vard doc std`)
+Button(label, onTap: fn() = {}, kind: .filled|.tonal|.outline|.text = .filled, enabled: Bool = true)
+Checkbox(bind value: Bool, label: String = "")     Switch(bind value: Bool, label: String = "")
+Card { ... } (padded surface, slot)                Divider()
+A design system is plain Vard views: copy std's pattern (tokens + params with enum `kind`).
+
+## Native
+`extern fn name(params) -> T` declares a platform call (implemented per platform by a
+native module). In `vard run`/tests calls are logged as `native: name(args)` and return
+the `mock` value or a zero value (0, "", false, [], nil).
+
+## Actions (`vard run --do`, .vtest files, MCP vard_run) — one per line or `;`
+tree | layout | tap SEL | type SEL "text" | submit SEL | scroll SEL DY | why SEL | find SEL
+state | lint | log | stats | theme light|dark | size W H | mock NAME VALUE | shot FILE.png [scale]
+expect SEL|"text"   expect no "text"   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
+SEL: @12 (node id from `tree`) | #id | "label" (exact, then whole word, then substring)
+Mutating actions print a diff: `+` added, `-` removed, `~` changed lines.
+.vtest file = actions + optional header lines: @view Name  @size 390x844  @dark  @app ../path
+Each run starts fresh and is deterministic: replay the whole sequence, don't keep sessions.
+
+## Diagnostics
+E01xx syntax, E02xx names/elements/props, E03xx types, E04xx mutability, W warnings,
+R runtime (printed as `! R0003 ... (file:line)`), L UI lints (overflow, tap size, contrast).
+Each has file:line, the source line and `fix:` (auto-applied by --fix) or `help:`.
+Unclear? `vard explain CODE`. Element/view signature: `vard doc Name`.

@@ -1,0 +1,6 @@
+[package]
+name = "vard-lang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Vard language front-end: lexer, parser, type checker, diagnostics, element registry"

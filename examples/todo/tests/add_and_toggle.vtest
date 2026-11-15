@@ -1,0 +1,11 @@
+expect "1 left of 2"
+type #new "Buy milk"
+tap "Add"
+expect "Buy milk"
+expect "2 left of 3"
+tap "Buy milk"
+expect "Buy milk" checked
+expect "1 left of 3"
+tap "Active"
+expect no "Buy milk"
+expect "Build an app"

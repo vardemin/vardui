@@ -1,0 +1,48 @@
+//! `vard explain <code>`: short, on-demand explanations. Kept out of the default error
+//! output so the common path stays cheap in tokens.
+
+pub const EXPLAIN: &[(&str, &str)] = &[
+    ("E0106", "Vard statements end at the line break. Remove `;`."),
+    ("E0108", "Syntax: a specific token was expected. The message names it. Common causes: a missing `:` in `name: Type`, a missing `)`/`}`, or two statements on one line."),
+    ("E0109", "Top level allows only: view, struct, enum, fn, const, extern fn, theme. Inside a view body: state, let, fn, then elements / if / for."),
+    ("E0110", "A keyword from another language was used. Vard keywords: view, struct, enum, fn, const, state, let, var."),
+    ("E0111", "There are no imports. Every .vard file in the project directory shares one namespace; std views are always available."),
+    ("E0112", "In a view body, `state x = v` declares reactive mutable state and `let x = expr` a derived value that recomputes automatically. `var`/`const` are for fn bodies / top level."),
+    ("E0113", "A view body is declarative. Put imperative code in `fn name() { ... }` members or in handlers like `onTap: { ... }`."),
+    ("E0114", "state/let/fn must be direct members of the view, above the element tree."),
+    ("E0115", "No ++/--. Use `x += 1` / `x -= 1`."),
+    ("E0119", "No SwiftUI-style modifier chains. All styling is passed as named arguments: `Text(\"Hi\", padding: 16, background: .surface)`."),
+    ("E0121", "No `?.`. Use `x ?? fallback`, or test `x != nil` then `x!`."),
+    ("E0124", "No `@State`, `@Binding`, `@Composable` etc. Use `state x = v` in a view; two-way parameters are `bind name: Type`."),
+    ("E0201", "Unknown element. Built-ins: Column Row Stack Scroll Text Input Image Spacer. Std views: Button Checkbox Switch Card Divider. Your own: `view Name(params) { ... }`. Run `vard doc` for the list."),
+    ("E0202", "Unknown prop/parameter. Built-in elements accept their own props plus the common props (`vard doc common`). Views accept only their declared parameters plus the outer layout props width/height/grow/alignSelf/id/opacity."),
+    ("E0203", "Unknown name. Names must be declared: state/let/fn in the view, params, top-level const/fn, or a loop variable."),
+    ("E0204", "Unknown type. Built-in: Int Float String Bool Color, [T], T?, fn(T) -> R."),
+    ("E0205", "This element/view takes no children. Views accept children only through a `slot` parameter."),
+    ("E0206", "A required argument (one without a default) is missing."),
+    ("E0207", "Only the first argument may be positional (Text's text, Image's src, a view's first parameter). Everything else is `name: value`."),
+    ("E0209", "A lowercase name alone on a line inserts a `slot` parameter. To display a value, wrap it: `Text(\"{value}\")`."),
+    ("E0212", "Elements are not values. They cannot be stored in variables or returned from fns; use `if`/`for` in the view body or a `slot` parameter."),
+    ("E0214", "Unknown property/method. Lists: count isEmpty first last / contains indexOf map filter find any all sum join sortedBy reversed append insert removeAt remove removeWhere clear. Strings: count isEmpty / trim upper lower contains startsWith endsWith split toInt toFloat."),
+    ("E0215", "Properties are read without `()`, methods are called with `()`."),
+    ("E0301", "Type mismatch. Int converts to Float implicitly; nothing else converts. To show a number in text use interpolation: `\"{n}\"`."),
+    ("E0302", "`for` needs a list. For counting use `for i in range(0, n)`."),
+    ("E0303", "Operator/operand mismatch. `+ - * / %` take numbers (Int op Int = Int, `/` truncates); strings are built with interpolation, not `+`."),
+    ("E0304", "Unknown enum variant. The message lists the valid ones."),
+    ("E0305", "Unknown color token. Declare custom tokens in `theme { brand: #FF5500 }` (and `theme dark { ... }`), then use `.brand`."),
+    ("E0306", "`.name` shorthand needs a known expected type (an argument, a typed variable, or the other side of `==`)."),
+    ("E0307", "Lambda parameter types come from where the lambda is passed. Pass it directly to the function/prop, or declare a `fn`."),
+    ("E0308", "Add a type annotation: `state items: [Todo] = []`, `state picked: Todo? = nil`."),
+    ("E0309", "Return type mismatch. Declare `-> Type` on the fn if it returns a value."),
+    ("E0314", "Optional access. `T?` must be unwrapped before use: `x ?? fallback`, or `x!` after an `x != nil` check."),
+    ("E0401", "Assignment target is not mutable. Mutable things: `state`, `bind` parameters, `var` locals, and loop items of a `for` directly over state (`for t in todos`). Parameters and `let` are read-only; a fn that receives a struct gets a copy."),
+    ("E0402", "In-place list methods (append, insert, removeAt, remove, removeWhere, clear) need a mutable list: a `state`, a `bind` param or a `var`."),
+    ("W0401", "Keyed loops (`for t in todos by t.id`) keep each row's identity when the list is reordered or filtered. Without a key, rows are matched by position."),
+    ("W0402", "The view has no elements."),
+    ("W0403", "Input shows and edits the variable given in `value:`. Without it, typed text has nowhere to go."),
+    ("W0404", "`??` / `!` applied to a value that cannot be nil."),
+];
+
+pub fn explain(code: &str) -> Option<&'static str> {
+    EXPLAIN.iter().find(|(c, _)| c.eq_ignore_ascii_case(code)).map(|(_, t)| *t)
+}

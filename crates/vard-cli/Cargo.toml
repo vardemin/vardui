@@ -1,0 +1,15 @@
+[package]
+name = "vard-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "vard: check, run, test, inspect, doc, mcp"
+
+[[bin]]
+name = "vard"
+path = "src/main.rs"
+
+[dependencies]
+vard-lang = { path = "../vard-lang" }
+vard-runtime = { path = "../vard-runtime" }
+serde_json = "1"

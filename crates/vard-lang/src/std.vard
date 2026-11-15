@@ -1,0 +1,47 @@
+// Vard standard views. Written in Vard itself on top of the built-in elements:
+// a design system is ordinary Vard code, and this file is the reference example.
+
+enum ButtonKind { filled, tonal, outline, text }
+
+view Button(label: String, onTap: fn() = {}, kind: ButtonKind = .filled, enabled: Bool = true) {
+  Row(
+    height: 44, minWidth: 44, paddingX: 16, radius: 10, align: .center, justify: .center,
+    background: kind == .filled ? .primary : kind == .tonal ? .surface : .clear,
+    border: kind == .outline ? 1 : 0,
+    opacity: enabled ? 1 : 0.4,
+    role: .button, enabled: enabled, onTap: onTap
+  ) {
+    Text(label, style: .label, color: kind == .filled ? .onPrimary : .primary)
+  }
+}
+
+view Checkbox(bind value: Bool, label: String = "") {
+  Row(gap: 12, height: 44, align: .center, role: .checkbox, checked: value, label: label, onTap: { value = !value }) {
+    Stack(
+      width: 24, height: 24, radius: 6, border: 2, align: .center, justify: .center,
+      borderColor: value ? .primary : .border, background: value ? .primary : .clear
+    ) {
+      if value { Text("✓", size: 15, weight: .bold, color: .onPrimary) }
+    }
+    if label != "" { Text(label, grow: 1) }
+  }
+}
+
+view Switch(bind value: Bool, label: String = "") {
+  Row(gap: 12, height: 44, align: .center, role: .switch, checked: value, label: label, onTap: { value = !value }) {
+    if label != "" { Text(label, grow: 1) }
+    Row(width: 50, height: 30, radius: 15, padding: 3, justify: value ? .end : .start, background: value ? .primary : .border) {
+      Column(width: 24, height: 24, radius: 12, background: #FFFFFF)
+    }
+  }
+}
+
+view Card(content: slot) {
+  Column(padding: 16, gap: 8, radius: 14, background: .surface) {
+    content
+  }
+}
+
+view Divider() {
+  Column(height: 1, background: .border)
+}

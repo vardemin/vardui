@@ -1,0 +1,61 @@
+struct Todo { id: Int, title: String, done: Bool = false }
+
+enum Filter { all, active, done }
+
+view App {
+  state todos: [Todo] = [Todo(id: 1, title: "Read the Vard cheat sheet", done: true), Todo(id: 2, title: "Build an app")]
+  state draft = ""
+  state nextId = 3
+  state filter: Filter = .all
+  let left = todos.filter(t => !t.done).count
+  let shown = filter == .all ? todos : todos.filter(t => t.done == (filter == .done))
+
+  fn add() {
+    let title = draft.trim()
+    if title.isEmpty { return }
+    todos.append(Todo(id: nextId, title: title))
+    nextId += 1
+    draft = ""
+  }
+
+  fn toggle(id: Int) {
+    let i = todos.indexOf(todos.find(t => t.id == id)!) ?? -1
+    if i >= 0 { todos[i].done = !todos[i].done }
+  }
+
+  Column(padding: 16, gap: 12, grow: 1) {
+    Text("Todos", style: .title)
+    Row(gap: 8) {
+      Input(value: draft, placeholder: "What needs doing?", onSubmit: add, grow: 1, id: "new")
+      Button("Add", onTap: add, enabled: !draft.trim().isEmpty)
+    }
+    Row(gap: 8) {
+      FilterChip("All", active: filter == .all, onTap: { filter = .all })
+      FilterChip("Active", active: filter == .active, onTap: { filter = .active })
+      FilterChip("Done", active: filter == .done, onTap: { filter = .done })
+    }
+    Scroll(grow: 1, gap: 4) {
+      for t in shown by t.id {
+        Row(gap: 8, align: .center) {
+          Row(gap: 12, height: 44, align: .center, grow: 1, role: .checkbox, checked: t.done, onTap: { toggle(t.id) }) {
+            Text(t.done ? "☑" : "☐", size: 20, color: t.done ? .primary : .muted)
+            Text(t.title, strike: t.done, color: t.done ? .muted : .text, grow: 1)
+          }
+          Button("Delete", kind: .text, onTap: { todos.removeWhere(x => x.id == t.id) })
+        }
+      }
+      if shown.isEmpty {
+        Text("Nothing here", color: .muted, textAlign: .center, paddingY: 24)
+      }
+    }
+    Divider()
+    Text("{left} left of {todos.count}", style: .caption, color: .muted)
+  }
+}
+
+view FilterChip(label: String, active: Bool, onTap: fn()) {
+  Row(height: 44, paddingX: 14, radius: 22, align: .center,
+      background: active ? .primary : .surface, role: .button, onTap: onTap) {
+    Text(label, style: .label, color: active ? .onPrimary : .text)
+  }
+}

@@ -1,0 +1,13 @@
+expect "Nothing yet"
+tap "Add"
+tap "Add"
+expect no "Nothing yet"
+tap "New 1"
+expect "New 1" checked
+expect "Sign in" disabled
+type #email "a@b.c"
+type #password "12345678"
+expect "Sign in" enabled
+mock share true
+tap "Sign in"
+expect "New 2"
