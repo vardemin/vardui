@@ -28,10 +28,12 @@ $ vard run --do 'tap "Tap me"'
 | `crates/vard-lang` | лексер, парсер с восстановлением после ошибок, bidirectional type checker, диагностики с машинно-применимыми исправлениями, реестр элементов (единый источник правды для компилятора, рантайма и документации), std-виды на самом Vard |
 | `crates/vard-runtime` | fine-grained реактивность (signals / computed / effects, без virtual DOM), keyed-списки, flex-layout с объяснением размеров (`why`), семантическое дерево, диффы, UI-линты (overflow, tap target, WCAG-контраст, дубли id), headless-растеризация в PNG, темы light/dark, `extern fn` с моками |
 | `crates/vard-cli` | `vard check [--fix] [--json]`, `run --do`, `test` (`.vtest`), `doc`, `explain`, `new`, `mcp` (MCP-сервер на stdio) |
+| `crates/vard-ffi` | `cdylib` для нативных оболочек: C ABI (`vard_*`) и JNI — создать из исходников, `mount`, `tap(x, y)`, ввод текста, тема, кадр с разложенным деревом в компактном бинарном формате |
+| `platforms/android` | первая нативная оболочка: Kotlin-приложение рисует кадр на `Canvas`, пересылает касания, `Input` — настоящий `EditText` с IME ([как собрать](platforms/android/README.md)) |
 | `knowledge/` | `llms.txt` (полный справочник языка, ~2k токенов), `AGENTS.md`, скиллы `vard-app` и `vard-debug` — `vard new` кладёт их в каждый проект вместе с `.mcp.json` |
 | `examples/` | todo-приложение с тестом |
 
-Нативные оболочки Android/iOS, GPU-рендер, анимации, навигация и async — в
+Оболочка iOS, GPU-рендер, анимации, навигация и async — в
 [дорожной карте](docs/architecture.md#дорожная-карта). Ядро (язык, реактивность,
 layout, инспекция) спроектировано так, чтобы переехать на устройство без изменений.
 

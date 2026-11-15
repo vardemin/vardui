@@ -1,0 +1,15 @@
+[package]
+name = "vard-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C ABI and JNI surface over vard-runtime for native platform hosts"
+
+[lib]
+name = "vard_ffi"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vard-lang = { path = "../vard-lang" }
+vard-runtime = { path = "../vard-runtime" }
+jni = { version = "0.21", default-features = false }
