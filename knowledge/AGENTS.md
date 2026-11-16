@@ -32,4 +32,8 @@ Do not rely on React/SwiftUI/Flutter/Compose habits; the compiler rewrites the c
 - Colors only via tokens (`.primary`, `.muted`, ...) or a `theme { }` block — never raw hex in
   views, so dark mode works.
 - Keep state in the highest view that needs it; pass it down with `bind` params.
-- Native features: declare `extern fn` and mock it in tests (`mock name value`).
+- Styling / "make it look like X": read `vard doc design` (skill vard-design); Tailwind: `vard add tailwind`.
+- Platform features (push, permissions, prefs, secure storage, back, insets, native SDKs):
+  read `vard doc native` (skill vard-native). Persist settings with `pref`, secrets with
+  `secureSet`. Every native path is scriptable headless: `mock`, `resolve`, `push`, `back`,
+  `permission`, `restart`. Native SDKs: `vard add firebase`, `vard bindings --kotlin`.

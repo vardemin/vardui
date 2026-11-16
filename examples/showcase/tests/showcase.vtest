@@ -1,0 +1,12 @@
+@size 390x1400
+insets 44 34
+expect "Design" checked
+tap "Marketing"
+expect "Marketing" checked
+tap "Design"
+expect "Design" unchecked
+expect "Subscribe" disabled
+type #email "leslie@example.com"
+expect "Subscribe" enabled
+tap "Subscribe"
+lint

@@ -7,7 +7,9 @@
 pub mod actions;
 mod eval;
 pub mod inspect;
+pub mod json;
 pub mod layout;
+pub mod native;
 pub mod node;
 pub mod raster;
 pub mod rt;
@@ -26,6 +28,8 @@ pub const EXPLAIN: &[(&str, &str)] = &[
     ("R0005", "A function recursed more than 200 levels deep."),
     ("R0006", "Effects kept invalidating each other. Usually caused by R0003-style writes during rendering."),
     ("R0009", "An in-place change targeted something that is not a mutable variable."),
+    ("R0010", "An `extern fn` has no native implementation on this device. Implement it in a native module (`vard bindings --kotlin` generates the typed base class; register it in `VardActivity.modules()` or via manifest meta-data `dev.vard.module.<name>`), or add the module library that provides it (e.g. -Pvard.firebase=true)."),
+    ("R0011", "A native value did not match the declared enum (e.g. the host answered \"Granted\" for PermissionStatus). The first variant was used. Fix the native side or the enum."),
     ("L001", "Children extend past their container. Vertically: put the content in `Scroll(grow: 1) { ... }`. Horizontally: give the text/flexible child `grow: 1` so it takes only the remaining space and wraps, or reduce fixed sizes."),
     ("L002", "Interactive elements need at least 44x44dp to be reliably tappable. Add `height: 44`, padding, or use the std `Button`."),
     ("L004", "A container with children has zero width or height. `why @id` shows which rule produced the size (often a missing `grow: 1` or a zero-sized parent)."),

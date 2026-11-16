@@ -1,0 +1,69 @@
+// Notes on Firebase: anonymous auth, a live Firestore collection, analytics.
+// firebase.vard comes from `vard add firebase`; on Android build with -Pvard.firebase=true.
+
+view App {
+  state user: FirebaseUser? = nil
+  state notes: [Note] = []
+  state draft = ""
+  state error = ""
+  state busy = false
+  let signedIn = user != nil
+
+  fn collection() -> String { return "users/{(user ?? FirebaseUser(uid: "")).uid}/notes" }
+
+  fn signIn() {
+    busy = true
+    authSignInAnonymously(r => {
+      busy = false
+      if r.error != nil { error = r.error!.message }
+    })
+  }
+
+  fn add() {
+    let title = draft.trim()
+    if title.isEmpty { return }
+    draft = ""
+    firestoreAddNote(collection(), Note(title: title), (id, err) => {
+      if err != nil { error = err!.message }
+    })
+    analyticsLog("note_added", ["length": "{title.count}"])
+  }
+
+  fn remove(id: String) {
+    firestoreDeleteNote("{collection()}/{id}", err => {
+      if err != nil { error = err!.message }
+    })
+  }
+
+  on appear { user = authCurrentUser() }
+  on authChanged(u) {
+    user = u
+    if u != nil { firestoreListenNotes(collection(), list => { notes = list }) }
+  }
+
+  Column(grow: 1, safeArea: .all, padding: 16, gap: 12) {
+    Text("Notes", style: .title)
+    if error != "" {
+      Text(error, color: .danger, id: "error")
+    }
+    if !signedIn {
+      Text("Sign in to sync your notes across devices.", color: .muted)
+      Button(busy ? "Signing in…" : "Continue anonymously", onTap: signIn, enabled: !busy)
+    } else {
+      Row(gap: 8) {
+        Input(value: draft, placeholder: "New note", onSubmit: add, grow: 1, id: "draft")
+        Button("Add", onTap: add, enabled: !draft.trim().isEmpty)
+      }
+      Scroll(grow: 1, gap: 8) {
+        for n in notes by n.id {
+          Row(padding: 12, radius: 10, background: .surface, align: .center, gap: 8) {
+            Text(n.title, grow: 1)
+            Button("Delete", kind: .text, onTap: { remove(n.id) })
+          }
+        }
+        if notes.isEmpty { Text("No notes yet", color: .muted, textAlign: .center, paddingY: 24) }
+      }
+      Button("Sign out", kind: .outline, onTap: { authSignOut() })
+    }
+  }
+}

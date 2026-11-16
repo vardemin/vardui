@@ -18,6 +18,8 @@ pub enum Ty {
     Unit,
     Nil,
     List(Box<Ty>),
+    /// `[String: T]`
+    Map(Box<Ty>),
     Opt(Box<Ty>),
     Struct(String),
     Enum(String),
@@ -38,6 +40,7 @@ impl std::fmt::Display for Ty {
             Ty::Unit => write!(f, "()"),
             Ty::Nil => write!(f, "nil"),
             Ty::List(t) => write!(f, "[{}]", t),
+            Ty::Map(t) => write!(f, "[String: {}]", t),
             Ty::Opt(t) => write!(f, "{}?", t),
             Ty::Struct(n) | Ty::Enum(n) => write!(f, "{}", n),
             Ty::Fn(ps, r) => {
@@ -68,6 +71,7 @@ fn assignable(from: &Ty, to: &Ty) -> bool {
         (Ty::Nil, Ty::Opt(_)) => true,
         (a, Ty::Opt(b)) => assignable(a, b),
         (Ty::List(a), Ty::List(b)) => assignable(a, b),
+        (Ty::Map(a), Ty::Map(b)) => assignable(a, b),
         (Ty::Fn(pa, ra), Ty::Fn(pb, rb)) => {
             pa.len() == pb.len() && pa.iter().zip(pb).all(|(a, b)| assignable(b, a)) && (**rb == Ty::Unit || assignable(ra, rb))
         }
@@ -117,8 +121,13 @@ pub struct Checker<'a> {
     fns: HashMap<String, FnSig>,
     consts: HashMap<String, Ty>,
     views: HashMap<String, Vec<ParamSig>>,
+    events: HashMap<String, Vec<ParamSig>>,
+    /// `pref` names are app-wide: every declaration of one name must agree on the type.
+    prefs: HashMap<String, Ty>,
     tokens: HashSet<String>,
     scopes: Vec<HashMap<String, Var>>,
+    /// User code mentions `safeArea` (see `Program::uses_safe_area`).
+    pub uses_safe_area: bool,
     /// Return type of the enclosing fn/lambda: `Some(Some(t))` fixed, `Some(None)` infer.
     ret: Option<Option<Ty>>,
     inferred_ret: Option<Ty>,
@@ -144,7 +153,8 @@ impl std::ops::DerefMut for D<'_> {
 }
 
 /// Layout props that may be passed to any view use; they apply to the view's root element.
-pub const VIEW_OUTER_PROPS: &[&str] = &["width", "height", "minWidth", "minHeight", "maxWidth", "grow", "alignSelf", "id", "opacity"];
+pub const VIEW_OUTER_PROPS: &[&str] =
+    &["width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "aspectRatio", "grow", "alignSelf", "id", "opacity", "offsetX", "offsetY", "scale"];
 
 const BUILTIN_FNS: &[&str] = &["print", "range", "min", "max"];
 
@@ -160,8 +170,11 @@ impl<'a> Checker<'a> {
             fns: HashMap::new(),
             consts: HashMap::new(),
             views: HashMap::new(),
+            events: HashMap::new(),
+            prefs: HashMap::new(),
             tokens: HashSet::new(),
             scopes: Vec::new(),
+            uses_safe_area: false,
             ret: None,
             inferred_ret: None,
         }
@@ -198,8 +211,14 @@ impl<'a> Checker<'a> {
         }
         for t in &p.themes {
             for (name, e, sp) in &t.entries {
+                if name == "font" {
+                    if !matches!(p.expr(*e), Expr::Str(parts) if parts.iter().all(|s| matches!(s, StrPart::Lit(_)))) {
+                        self.err("E0221", *sp, "`font` in a theme is a family name string, e.g. `font: \"Inter\"`");
+                    }
+                    continue;
+                }
                 if !matches!(p.expr(*e), Expr::Color(_)) {
-                    self.err("E0221", *sp, "theme entries must be color literals, e.g. `primary: #2563EB`");
+                    self.err("E0221", *sp, "theme entries must be color literals, e.g. `primary: #2563EB` (or `font: \"Inter\"`)");
                 }
                 self.tokens.insert(name.clone());
             }
@@ -217,8 +236,36 @@ impl<'a> Checker<'a> {
         }
         for f in &p.externs {
             let sig = FnSig { params: self.param_sigs(&f.params), ret: f.ret.as_ref().map(|t| self.resolve(t)).unwrap_or(Ty::Unit) };
+            for (pa, ps) in f.params.iter().zip(&sig.params) {
+                let ok = match &ps.ty {
+                    Ty::Fn(args, r) => args.iter().all(is_data) && **r == Ty::Unit,
+                    t => is_data(t),
+                };
+                if !ok {
+                    self.err("E0317", pa.span, format!("`{}: {}` cannot cross the native boundary", pa.name, ps.ty))
+                        .help("extern parameters are data (Int Float String Bool Color, structs, enums, lists, maps, optionals) or callbacks `fn(Data)` that return nothing");
+                }
+                if pa.bind {
+                    self.err("E0317", pa.span, "extern fn parameters cannot be `bind`; return the new value or pass a callback");
+                }
+            }
+            if !is_data(&sig.ret) && sig.ret != Ty::Unit {
+                self.err("E0317", f.span, format!("extern fn `{}` cannot return {}", f.name, sig.ret))
+                    .help("return data; for results that arrive later take a callback parameter: `done: fn(Result)`");
+            }
             if self.fns.insert(f.name.clone(), sig).is_some() {
                 self.err("E0220", f.span, format!("function `{}` is already defined", f.name));
+            }
+        }
+        for ev in &p.events {
+            let sig = self.param_sigs(&ev.params);
+            for (pa, ps) in ev.params.iter().zip(&sig) {
+                if !is_data(&ps.ty) {
+                    self.err("E0317", pa.span, format!("event parameter `{}: {}` must be data", pa.name, ps.ty));
+                }
+            }
+            if self.events.insert(ev.name.clone(), sig).is_some() {
+                self.err("E0220", ev.span, format!("event `{}` is already defined", ev.name));
             }
         }
         for v in &p.views {
@@ -300,6 +347,7 @@ impl<'a> Checker<'a> {
                 }
             },
             TypeRef::List(t) => Ty::List(Box::new(self.resolve(t))),
+            TypeRef::Map(t) => Ty::Map(Box::new(self.resolve(t))),
             TypeRef::Opt(t) => Ty::Opt(Box::new(self.resolve(t))),
             TypeRef::Fn(ps, r) => {
                 let ps = ps.iter().map(|t| self.resolve(t)).collect();
@@ -320,6 +368,7 @@ impl<'a> Checker<'a> {
         let vague = match &ty {
             Ty::Nil => Some("T?"),
             Ty::List(t) if **t == Ty::Unknown && matches!(self.p.expr(value), Expr::List(v) if v.is_empty()) => Some("[T]"),
+            Ty::Map(t) if **t == Ty::Unknown && matches!(self.p.expr(value), Expr::Map(v) if v.is_empty()) => Some("[String: T]"),
             _ => None,
         };
         if let Some(shape) = vague {
@@ -395,6 +444,23 @@ impl<'a> Checker<'a> {
                     let t = self.declared_or_inferred(ty.as_ref(), *init, name, *span, "state");
                     self.declare(name, t, VarKind::State);
                 }
+                ViewMember::Pref { name, ty, init, span } => {
+                    let t = self.declared_or_inferred(ty.as_ref(), *init, name, *span, "pref");
+                    if !is_data(&t) {
+                        self.err("E0317", *span, format!("`pref {}` must hold data that can be stored, found {}", name, t));
+                    }
+                    match self.prefs.get(name) {
+                        Some(prev) if *prev != t && t != Ty::Unknown && *prev != Ty::Unknown => {
+                            let prev = prev.clone();
+                            self.err("E0223", *span, format!("`pref {}` is declared elsewhere as {}; one name = one app-wide value", name, prev))
+                                .help(format!("use the same type ({}) or another name", prev));
+                        }
+                        _ => {
+                            self.prefs.insert(name.clone(), t.clone());
+                        }
+                    }
+                    self.declare(name, t, VarKind::State);
+                }
                 ViewMember::Let { name, ty, value, span } => {
                     let t = self.declared_or_inferred(ty.as_ref(), *value, name, *span, "let");
                     self.declare(name, t, VarKind::Derived);
@@ -406,12 +472,50 @@ impl<'a> Checker<'a> {
             match m {
                 ViewMember::Fn(f) => self.check_fn(f),
                 ViewMember::Node(n) => self.ui(*n),
+                ViewMember::On { event, event_span, params, cond, body, span } => self.check_on(event, *event_span, params, *cond, body, *span),
                 _ => {}
             }
         }
         if !v.members.iter().any(|m| matches!(m, ViewMember::Node(_))) {
             self.warn("W0402", v.span, format!("view `{}` renders nothing (no elements in its body)", v.name));
         }
+        self.scopes.pop();
+    }
+
+    fn check_on(&mut self, event: &str, event_span: Span, params: &[String], cond: Option<ExprId>, body: &[Stmt], span: Span) {
+        let sig = match self.events.get(event).cloned() {
+            Some(s) => Some(s),
+            None => {
+                let alias = registry::alias(registry::EVENT_ALIASES, event).filter(|a| self.events.contains_key(*a));
+                let sugg = alias.map(|s| s.to_string()).or_else(|| closest(event, self.events.keys().map(|s| s.as_str())).map(|s| s.to_string()));
+                let mut names: Vec<&str> = self.events.keys().map(|s| s.as_str()).collect();
+                names.sort();
+                let list = names.join(" ");
+                let mut d = self.err("E0222", event_span, format!("unknown event `{}`", event));
+                match &sugg {
+                    Some(s) => d.fix = Some(crate::diag::Fix { span: event_span, replacement: s.clone() }),
+                    None => d.help = Some(format!("events: {}; declare your own with `extern event name(params)`", list)),
+                }
+                sugg.and_then(|s| self.events.get(&s).cloned())
+            }
+        };
+        self.scopes.push(HashMap::new());
+        if let Some(sig) = &sig {
+            if params.len() > sig.len() {
+                let shape = sig.iter().map(|p| format!("{}: {}", p.name, p.ty)).collect::<Vec<_>>().join(", ");
+                self.err("E0310", span, format!("`{}` passes {} value(s) ({}), but the handler takes {}", event, sig.len(), shape, params.len()));
+            }
+        }
+        for (i, name) in params.iter().enumerate() {
+            let ty = sig.as_ref().and_then(|s| s.get(i)).map(|p| p.ty.clone()).unwrap_or(Ty::Unknown);
+            self.declare(name, ty, VarKind::Param);
+        }
+        if let Some(c) = cond {
+            self.expect(c, &Ty::Bool);
+        }
+        let saved = self.ret.replace(Some(Ty::Unit));
+        self.block(body);
+        self.ret = saved;
         self.scopes.pop();
     }
 
@@ -513,7 +617,7 @@ impl<'a> Checker<'a> {
                         }
                         None => {
                             d.help = Some(
-                                "built-ins: Column Row Stack Scroll Text Input Image Spacer; std views: Button Checkbox Switch Card Divider; or declare `view Name { ... }`"
+                                "built-ins: Column Row Grid Stack Scroll Text Input Image Spacer; std views: Button Checkbox Switch Card Divider; or declare `view Name { ... }`"
                                     .into(),
                             )
                         }
@@ -576,7 +680,11 @@ impl<'a> Checker<'a> {
                 self.err("E0208", arg.name_span, format!("prop `{}` is given twice", prop.name));
             }
             seen.push(prop.name);
+            if prop.name == "safeArea" && span.file != 0 {
+                self.uses_safe_area = true;
+            }
             match prop.ty {
+                PTy::Colors => self.expect(arg.value, &Ty::List(Box::new(Ty::Color))),
                 PTy::Float => self.expect(arg.value, &Ty::Float),
                 PTy::Int => self.expect(arg.value, &Ty::Int),
                 PTy::Bool => self.expect(arg.value, &Ty::Bool),
@@ -846,6 +954,17 @@ impl<'a> Checker<'a> {
                 if let Some(f) = self.fns.get(n) {
                     return Ty::Fn(f.params.iter().map(|p| p.ty.clone()).collect(), Box::new(f.ret.clone()));
                 }
+                if let Some((ty, _)) = registry::global(n) {
+                    if n == "safeArea" && sp.file != 0 {
+                        self.uses_safe_area = true;
+                    }
+                    return match ty {
+                        "Float" => Ty::Float,
+                        "Bool" => Ty::Bool,
+                        "String" => Ty::Str,
+                        other => Ty::Struct(other.to_string()),
+                    };
+                }
                 let names: Vec<String> = self.scopes.iter().flat_map(|s| s.keys().cloned()).chain(self.consts.keys().cloned()).chain(self.fns.keys().cloned()).collect();
                 let sugg = closest(n, names.iter().map(|s| s.as_str())).map(|s| s.to_string());
                 let is_type = self.structs.contains_key(n) || self.enums.contains_key(n);
@@ -925,6 +1044,23 @@ impl<'a> Checker<'a> {
                 }
                 Ty::List(Box::new(elem.unwrap_or(Ty::Unknown)))
             }
+            Expr::Map(pairs) => {
+                let mut elem = match want {
+                    Some(Ty::Map(t)) => Some((**t).clone()),
+                    _ => None,
+                };
+                for (k, v) in pairs {
+                    self.expect(*k, &Ty::Str);
+                    match &elem {
+                        Some(t) => {
+                            let t = t.clone();
+                            self.expect(*v, &t)
+                        }
+                        None => elem = Some(self.check(*v, None)),
+                    }
+                }
+                Ty::Map(Box::new(elem.unwrap_or(Ty::Unknown)))
+            }
             Expr::Unary(op, x) => match op {
                 UnOp::Not => {
                     self.expect(*x, &Ty::Bool);
@@ -976,12 +1112,22 @@ impl<'a> Checker<'a> {
             }
             Expr::Index(recv, idx) => {
                 let rt = self.check(*recv, None);
-                self.expect(*idx, &Ty::Int);
                 match rt {
-                    Ty::List(t) => *t,
-                    Ty::Unknown => Ty::Unknown,
+                    Ty::List(t) => {
+                        self.expect(*idx, &Ty::Int);
+                        *t
+                    }
+                    Ty::Map(t) => {
+                        self.expect(*idx, &Ty::Str);
+                        Ty::Opt(t)
+                    }
+                    Ty::Unknown => {
+                        self.check(*idx, None);
+                        Ty::Unknown
+                    }
                     other => {
-                        self.err("E0303", sp, format!("only lists can be indexed, found {}", other));
+                        self.check(*idx, None);
+                        self.err("E0303", sp, format!("only lists and maps can be indexed, found {}", other));
                         Ty::Unknown
                     }
                 }
@@ -1137,9 +1283,11 @@ impl<'a> Checker<'a> {
     fn member(&mut self, rt: &Ty, name: &str, nsp: Span) -> Ty {
         let found = match (rt, name) {
             (Ty::Unknown, _) => Some(Ty::Unknown),
-            (Ty::Str | Ty::List(_), "count") => Some(Ty::Int),
-            (Ty::Str | Ty::List(_), "isEmpty") => Some(Ty::Bool),
+            (Ty::Str | Ty::List(_) | Ty::Map(_), "count") => Some(Ty::Int),
+            (Ty::Str | Ty::List(_) | Ty::Map(_), "isEmpty") => Some(Ty::Bool),
             (Ty::List(t), "first" | "last") => Some(Ty::Opt(t.clone())),
+            (Ty::Map(_), "keys") => Some(Ty::List(Box::new(Ty::Str))),
+            (Ty::Map(t), "values") => Some(Ty::List(t.clone())),
             (Ty::Struct(s), _) => self.structs.get(s).and_then(|f| f.iter().find(|f| f.name == name)).map(|f| f.ty.clone()),
             _ => None,
         };
@@ -1176,6 +1324,8 @@ impl<'a> Checker<'a> {
                 "contains", "indexOf", "map", "filter", "find", "any", "all", "sum", "join", "sortedBy", "reversed", "append", "insert",
                 "removeAt", "remove", "removeWhere", "clear",
             ],
+            (Ty::Map(_), false) => &["count", "isEmpty", "keys", "values"],
+            (Ty::Map(_), true) => &["contains", "remove", "clear"],
             (Ty::Int, true) => &["toFloat", "toString", "abs"],
             (Ty::Float, true) => &["toInt", "round", "floor", "ceil", "fixed", "toString", "abs"],
             (Ty::Struct(s), false) => {
@@ -1421,6 +1571,17 @@ impl<'a> Checker<'a> {
                     _ => self.unknown_method(rt, name, nsp, args),
                 }
             }
+            (Ty::Map(_), "contains") => simple(self, &[Ty::Str], Ty::Bool),
+            (Ty::Map(_), "remove" | "clear") => {
+                if let Some(reason) = self.place_error(recv) {
+                    self.err("E0402", nsp, format!("`.{}` changes the map in place and needs a mutable variable: {}", name, reason));
+                }
+                if name == "remove" {
+                    simple(self, &[Ty::Str], Ty::Unit)
+                } else {
+                    simple(self, &[], Ty::Unit)
+                }
+            }
             (Ty::Struct(s), _) => {
                 // calling a function-typed field
                 match self.structs.get(s).and_then(|f| f.iter().find(|f| f.name == name)).map(|f| f.ty.clone()) {
@@ -1493,4 +1654,13 @@ fn members_help(rt: &Ty, props: &[String], methods: &[String]) -> String {
 
 fn is_slot(t: &TypeRef) -> bool {
     matches!(t, TypeRef::Named(n, _) if n == "slot")
+}
+
+/// Values that can cross the native boundary / be persisted (JSON-representable).
+fn is_data(t: &Ty) -> bool {
+    match t {
+        Ty::Int | Ty::Float | Ty::Str | Ty::Bool | Ty::Color | Ty::Struct(_) | Ty::Enum(_) | Ty::Unknown => true,
+        Ty::List(x) | Ty::Map(x) | Ty::Opt(x) => is_data(x),
+        _ => false,
+    }
 }

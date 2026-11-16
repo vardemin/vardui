@@ -1,0 +1,6 @@
+# vard://open/settings from a link or another app
+emit deepLink "vard://open/settings"
+expect "Dark mode"
+back
+emit deepLink "vard://open/inbox"
+expect "No messages yet"

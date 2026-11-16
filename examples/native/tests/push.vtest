@@ -1,0 +1,11 @@
+# foreground push lands in the inbox; tapping a notification opens the message
+push received "Order shipped" "Your parcel is on the way" {"route": "inbox"}
+expect "Inbox (1)"
+tap "Inbox (1)"
+expect "Order shipped"
+push opened "Weekly digest" "Five new articles"
+expect "Message"
+expect "Weekly digest"
+expect "Five new articles"
+back
+expect "Vard native"

@@ -21,7 +21,13 @@ milliseconds. Reproduce with actions, read text, fix, re-run the same actions.
 | `! R0003` | — | state written during render (in a `let`, prop or condition); move the write into a handler |
 | `! R0001` | — | index out of range / `!` on nil at file:line; guard with `.count`, `??`, `!= nil` |
 | `! R0002` | — | duplicate `by` key; use a unique id field |
-| native call wrong | `log` | `native: name(args)` lines; set results with `mock name value` |
+| native call wrong | `log` | `native: name(args)` lines; set results with `mock name JSON` |
+| async result never shows | `pending` | the call is waiting: `resolve NAME JSON` (once) / `send NAME JSON` (listener); a callback with two params takes `[a, b]` |
+| push / deep link / back not handled | `push received "T" "B"`, `emit deepLink "x"`, `back` | "no handler is listening" in `log` → the `on` member lives in a view that is not on screen |
+| permission flow | `permission camera answer denied`, `storage` | second refusal = `.blocked` → offer `openAppSettings()` |
+| pref/secure lost | `restart`, `storage` | values survive `restart`; UI state does not (use `pref` for what must survive) |
+| content under status bar / keyboard | `insets 47 34; keyboard 300; why SEL` | add `safeArea: .top/.bottom` to the header/scrolling container |
+| `! R0010` on device | — | an extern has no native implementation: `vard bindings --kotlin`, implement, register |
 | looks wrong visually | `shot out.png` | only for visual judgement; then go back to `why`/`layout` for numbers |
 
 ## Typical fixes

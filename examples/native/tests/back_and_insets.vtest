@@ -1,0 +1,16 @@
+# edge-to-edge: the top bar extends under the status bar, content starts below it;
+# predictive back: progress shifts the screen, cancel restores it, release pops it
+@size 390x844
+insets 44 34
+why "Vard native"
+tap "Settings"
+expect "Settings"
+back 0.5
+why "Dark mode"
+back cancel
+back
+expect "Vard native"
+expect no "Dark mode"
+back
+keyboard 300
+why "App launches: 1"

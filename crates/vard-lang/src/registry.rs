@@ -16,6 +16,8 @@ pub enum PTy {
     FnStr,
     /// two-way binding to a String place
     BindStr,
+    /// `[Color]` (gradient stops)
+    Colors,
 }
 
 impl PTy {
@@ -33,6 +35,7 @@ impl PTy {
             PTy::Fn0 => "fn()".into(),
             PTy::FnStr => "fn(String)".into(),
             PTy::BindStr => "bind String".into(),
+            PTy::Colors => "[Color]".into(),
         }
     }
 }
@@ -62,6 +65,8 @@ pub const COMMON: &[PropDef] = &[
     p("minWidth", PTy::Float, "lower bound for width"),
     p("minHeight", PTy::Float, "lower bound for height"),
     p("maxWidth", PTy::Float, "upper bound for width"),
+    p("maxHeight", PTy::Float, "upper bound for height"),
+    p("aspectRatio", PTy::Float, "width / height; the free axis follows the other one (16/9, 1)"),
     p("grow", PTy::Float, "share of free space along the parent's main axis (like CSS flex-grow)"),
     p("padding", PTy::Float, "inner padding, all sides"),
     p("paddingX", PTy::Float, "left+right padding"),
@@ -70,11 +75,28 @@ pub const COMMON: &[PropDef] = &[
     p("paddingBottom", PTy::Float, ""),
     p("paddingLeft", PTy::Float, ""),
     p("paddingRight", PTy::Float, ""),
+    p("safeArea", PTy::Enum("SafeArea"), "add the system bar / cutout / keyboard insets to the padding on these edges"),
     p("background", PTy::Color, "fill color"),
+    p("gradient", PTy::Colors, "linear gradient fill, evenly spaced stops (over `background`)"),
+    p("gradientAngle", PTy::Float, "gradient direction in degrees, CSS convention: 180 = top to bottom (default), 90 = left to right"),
     p("radius", PTy::Float, "corner radius"),
+    p("radiusTopLeft", PTy::Float, "overrides `radius` for one corner"),
+    p("radiusTopRight", PTy::Float, ""),
+    p("radiusBottomLeft", PTy::Float, ""),
+    p("radiusBottomRight", PTy::Float, ""),
     p("border", PTy::Float, "border width"),
+    p("borderTop", PTy::Float, "width of a single-side border (no rounding)"),
+    p("borderBottom", PTy::Float, ""),
+    p("borderLeft", PTy::Float, ""),
+    p("borderRight", PTy::Float, ""),
     p("borderColor", PTy::Color, "border color (default .border)"),
+    p("shadow", PTy::Enum("Shadow"), "drop shadow, Tailwind scale: .sm .md .lg .xl .xxl"),
+    p("shadowColor", PTy::Color, "shadow tint (default black at the scale's opacity)"),
     p("opacity", PTy::Float, "0..1"),
+    p("offsetX", PTy::Float, "visual shift after layout (does not move siblings); animates well"),
+    p("offsetY", PTy::Float, ""),
+    p("scale", PTy::Float, "visual scale around the center after layout (1 = normal)"),
+    p("clip", PTy::Bool, "clip children to this element's bounds (rounded by `radius`)"),
     p("alignSelf", PTy::Enum("Align"), "override the parent's `align` for this element"),
     p("onTap", PTy::Fn0, "tap handler; makes the element interactive"),
     p("id", PTy::Str, "stable id for tests and inspection (`#id` selector)"),
@@ -88,6 +110,19 @@ const FLEX: &[PropDef] = &[
     p("gap", PTy::Float, "space between children"),
     p("align", PTy::Enum("Align"), "cross-axis alignment of children (default .stretch)"),
     p("justify", PTy::Enum("Justify"), "main-axis distribution of children (default .start)"),
+];
+
+const ROW: &[PropDef] = &[
+    p("gap", PTy::Float, "space between children (and between wrapped lines)"),
+    p("align", PTy::Enum("Align"), "cross-axis alignment of children (default .stretch)"),
+    p("justify", PTy::Enum("Justify"), "main-axis distribution of children (default .start)"),
+    p("wrap", PTy::Bool, "flow children onto new lines when they do not fit (CSS flex-wrap)"),
+];
+
+const GRID: &[PropDef] = &[
+    p("columns", PTy::Int, "number of equal-width columns (default 2)"),
+    p("gap", PTy::Float, "space between cells, both axes"),
+    p("align", PTy::Enum("Align"), "vertical alignment of a cell's content within its row (default .stretch)"),
 ];
 
 const STACK: &[PropDef] = &[
@@ -109,6 +144,11 @@ const TEXT: &[PropDef] = &[
     p("textAlign", PTy::Enum("TextAlign"), "horizontal alignment inside its box"),
     p("maxLines", PTy::Int, "truncate with an ellipsis after N lines"),
     p("strike", PTy::Bool, "strikethrough"),
+    p("underline", PTy::Bool, "underline"),
+    p("italic", PTy::Bool, "italic"),
+    p("font", PTy::Str, "font family from the project's fonts/ folder (default: theme `font`, else system)"),
+    p("letterSpacing", PTy::Float, "extra space between characters, dp (Tailwind tracking-wide = 0.4 at 16)"),
+    p("lineHeight", PTy::Float, "line height in dp (default from `style`)"),
 ];
 
 const INPUT: &[PropDef] = &[
@@ -117,18 +157,24 @@ const INPUT: &[PropDef] = &[
     p("onSubmit", PTy::Fn0, "called on the keyboard's submit action"),
     p("onChange", PTy::FnStr, "called with the new text after each edit"),
     p("secure", PTy::Bool, "password entry"),
+    p("keyboard", PTy::Enum("Keyboard"), "keyboard layout: .text .email .number .phone .url"),
     p("size", PTy::Float, "font size"),
+    p("weight", PTy::Enum("Weight"), "font weight"),
+    p("font", PTy::Str, "font family"),
     p("color", PTy::Color, "text color"),
+    p("placeholderColor", PTy::Color, "placeholder color (default .muted)"),
 ];
 
 const IMAGE: &[PropDef] = &[
-    p("src", PTy::Str, "asset path or URL (positional)"),
+    p("src", PTy::Str, "project-relative path (assets/logo.png) or https URL (positional)"),
     p("fit", PTy::Enum("Fit"), "scaling mode (default .cover)"),
+    p("tint", PTy::Color, "recolor a single-color icon"),
 ];
 
 pub const ELEMENTS: &[ElemDef] = &[
     ElemDef { name: "Column", positional: None, props: FLEX, children: true, doc: "vertical flex container" },
-    ElemDef { name: "Row", positional: None, props: FLEX, children: true, doc: "horizontal flex container" },
+    ElemDef { name: "Row", positional: None, props: ROW, children: true, doc: "horizontal flex container (`wrap: true` flows onto new lines)" },
+    ElemDef { name: "Grid", positional: None, props: GRID, children: true, doc: "equal-width columns; children fill cells row by row" },
     ElemDef { name: "Stack", positional: None, props: STACK, children: true, doc: "overlays children on top of each other (z-order = source order)" },
     ElemDef { name: "Scroll", positional: None, props: SCROLL, children: true, doc: "vertical scrolling column; needs a bounded height (usually `grow: 1`)" },
     ElemDef { name: "Text", positional: Some("text"), props: TEXT, children: false, doc: "text run; wraps to the available width" },
@@ -149,11 +195,56 @@ pub const ENUMS: &[(&str, &[&str])] = &[
     ("Align", &["start", "center", "end", "stretch"]),
     ("Justify", &["start", "center", "end", "between", "around", "evenly"]),
     ("TextStyle", &["display", "title", "heading", "body", "label", "caption"]),
-    ("Weight", &["regular", "medium", "bold"]),
+    ("Weight", &["thin", "extraLight", "light", "regular", "medium", "semibold", "bold", "extraBold", "black"]),
     ("TextAlign", &["start", "center", "end"]),
     ("Fit", &["cover", "contain", "fill"]),
     ("Role", &["none", "button", "checkbox", "switch", "heading", "link", "image"]),
+    ("Shadow", &["none", "sm", "md", "lg", "xl", "xxl"]),
+    ("SafeArea", &["none", "all", "top", "bottom", "horizontal", "vertical"]),
+    ("Keyboard", &["text", "email", "number", "phone", "url"]),
 ];
+
+/// CSS-style numeric weight of a `Weight` variant.
+pub fn weight_value(name: &str) -> u16 {
+    match name {
+        "thin" => 100,
+        "extraLight" => 200,
+        "light" => 300,
+        "medium" => 500,
+        "semibold" => 600,
+        "bold" => 700,
+        "extraBold" => 800,
+        "black" => 900,
+        _ => 400,
+    }
+}
+
+/// Tailwind shadow scale: (y offset, blur radius, opacity) in dp.
+pub fn shadow_params(name: &str) -> Option<(f32, f32, f32)> {
+    Some(match name {
+        "sm" => (1.0, 2.0, 0.05),
+        "md" => (4.0, 6.0, 0.10),
+        "lg" => (10.0, 15.0, 0.10),
+        "xl" => (20.0, 25.0, 0.10),
+        "xxl" => (25.0, 50.0, 0.25),
+        _ => return None,
+    })
+}
+
+/// Read-only reactive values provided by the runtime/host: (name, type, doc).
+pub const GLOBALS: &[(&str, &str, &str)] = &[
+    ("safeArea", "Insets", "system bars + display cutout + keyboard, dp (bottom = max(nav bar, keyboard))"),
+    ("keyboardHeight", "Float", "height of the on-screen keyboard in dp, 0 when hidden"),
+    ("backProgress", "Float", "0..1 while a predictive back gesture is in progress, else 0"),
+    ("isDark", "Bool", "the effective color scheme is dark"),
+    ("screenWidth", "Float", "screen width in dp (responsive layouts: `screenWidth >= 600 ? 3 : 2`)"),
+    ("screenHeight", "Float", "screen height in dp"),
+    ("platform", "String", "\"android\", \"ios\" or \"headless\""),
+];
+
+pub fn global(name: &str) -> Option<(&'static str, &'static str)> {
+    GLOBALS.iter().find(|(n, _, _)| *n == name).map(|(_, t, d)| (*t, *d))
+}
 
 pub fn enum_variants(name: &str) -> Option<&'static [&'static str]> {
     ENUMS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
@@ -218,6 +309,11 @@ pub const ELEM_ALIASES: &[(&str, &str)] = &[
     ("TextButton", "Button"),
     ("Separator", "Divider"),
     ("HDivider", "Divider"),
+    ("LazyVGrid", "Grid"),
+    ("GridView", "Grid"),
+    ("LazyVerticalGrid", "Grid"),
+    ("FlowRow", "Row"),
+    ("Wrap", "Row"),
 ];
 
 pub const PROP_ALIASES: &[(&str, &str)] = &[
@@ -270,6 +366,81 @@ pub const PROP_ALIASES: &[(&str, &str)] = &[
     ("source", "src"),
     ("resizeMode", "fit"),
     ("contentMode", "fit"),
+    ("objectFit", "fit"),
+    ("maxH", "maxHeight"),
+    ("minH", "minHeight"),
+    ("minW", "minWidth"),
+    ("maxW", "maxWidth"),
+    ("boxShadow", "shadow"),
+    ("elevation", "shadow"),
+    ("dropShadow", "shadow"),
+    ("fontFamily", "font"),
+    ("tracking", "letterSpacing"),
+    ("kerning", "letterSpacing"),
+    ("leading", "lineHeight"),
+    ("translateX", "offsetX"),
+    ("translateY", "offsetY"),
+    ("flexWrap", "wrap"),
+    ("numColumns", "columns"),
+    ("cols", "columns"),
+    ("aspect", "aspectRatio"),
+    ("overflow", "clip"),
+    ("clipped", "clip"),
+    ("clipsToBounds", "clip"),
+    ("overflowHidden", "clip"),
+    ("rowGap", "gap"),
+    ("columnGap", "gap"),
+    ("keyboardType", "keyboard"),
+    ("inputMode", "keyboard"),
+    ("tintColor", "tint"),
+    ("insets", "safeArea"),
+    ("edgesIgnoringSafeArea", "safeArea"),
+    ("ignoresSafeArea", "safeArea"),
+    ("windowInsets", "safeArea"),
+    ("backgroundGradient", "gradient"),
+    ("linearGradient", "gradient"),
+    ("roundedTopLeft", "radiusTopLeft"),
+    ("roundedTopRight", "radiusTopRight"),
+    ("roundedBottomLeft", "radiusBottomLeft"),
+    ("roundedBottomRight", "radiusBottomRight"),
+    ("borderTopWidth", "borderTop"),
+    ("borderBottomWidth", "borderBottom"),
+    ("borderLeftWidth", "borderLeft"),
+    ("borderRightWidth", "borderRight"),
+];
+
+/// Handler names from other frameworks -> Vard event names (`on appear { }`).
+pub const EVENT_ALIASES: &[(&str, &str)] = &[
+    ("mount", "appear"),
+    ("mounted", "appear"),
+    ("load", "appear"),
+    ("init", "appear"),
+    ("start", "appear"),
+    ("onAppear", "appear"),
+    ("didAppear", "appear"),
+    ("created", "appear"),
+    ("backPressed", "back"),
+    ("onBack", "back"),
+    ("backPress", "back"),
+    ("popstate", "back"),
+    ("resume", "appResume"),
+    ("foreground", "appResume"),
+    ("onResume", "appResume"),
+    ("pause", "appPause"),
+    ("background", "appPause"),
+    ("onPause", "appPause"),
+    ("push", "pushReceived"),
+    ("notification", "pushReceived"),
+    ("message", "pushReceived"),
+    ("onMessage", "pushReceived"),
+    ("notificationTapped", "pushOpened"),
+    ("notificationOpened", "pushOpened"),
+    ("onNotificationOpened", "pushOpened"),
+    ("tokenRefresh", "pushTokenChanged"),
+    ("onNewToken", "pushTokenChanged"),
+    ("url", "deepLink"),
+    ("openURL", "deepLink"),
+    ("onOpenURL", "deepLink"),
 ];
 
 pub const COLOR_ALIASES: &[(&str, &str)] = &[
@@ -338,6 +509,11 @@ pub const MEMBER_ALIASES: &[(&str, &str)] = &[
     ("hasSuffix", "endsWith"),
     ("toStr", "toString"),
     ("empty", "isEmpty"),
+    ("has", "contains"),
+    ("hasKey", "contains"),
+    ("containsKey", "contains"),
+    ("delete", "remove"),
+    ("allKeys", "keys"),
 ];
 
 pub fn alias(table: &[(&'static str, &'static str)], name: &str) -> Option<&'static str> {

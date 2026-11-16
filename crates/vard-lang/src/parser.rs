@@ -201,7 +201,7 @@ impl<'a> Parser<'a> {
                     let r = self.err(
                         "E0109",
                         sp,
-                        format!("expected a declaration (view, struct, enum, fn, const, extern fn, theme), found {}", found),
+                        format!("expected a declaration (view, struct, enum, fn, const, extern fn, extern event, theme), found {}", found),
                     );
                     self.bump();
                     r
@@ -280,7 +280,14 @@ impl<'a> Parser<'a> {
 
     fn extern_decl(&mut self) -> PResult<()> {
         let start = self.bump().span;
-        self.expect(Tok::Fn, "after `extern`")?;
+        if self.is_ident("event") {
+            self.bump();
+            let (name, _) = self.ident("event name")?;
+            let params = if *self.peek() == Tok::LParen { self.params()? } else { Vec::new() };
+            self.prog.events.push(EventDecl { name, params, span: start.to(self.prev_span()) });
+            return self.end_of_stmt();
+        }
+        self.expect(Tok::Fn, "after `extern` (`extern fn name(...)` or `extern event name(...)`)")?;
         let (name, _) = self.ident("function name")?;
         let params = self.params()?;
         let ret = if self.eat(&Tok::Arrow) { Some(self.type_ref()?) } else { None };
@@ -348,8 +355,21 @@ impl<'a> Parser<'a> {
             Tok::LBracket => {
                 self.bump();
                 let inner = self.type_ref()?;
-                self.expect(Tok::RBracket, "to close the list type")?;
-                TypeRef::List(Box::new(inner))
+                if self.eat(&Tok::Colon) {
+                    let value = self.type_ref()?;
+                    self.expect(Tok::RBracket, "to close the map type")?;
+                    if !matches!(&inner, TypeRef::Named(n, _) if n == "String") {
+                        let sp = match &inner {
+                            TypeRef::Named(_, sp) => *sp,
+                            _ => self.prev_span(),
+                        };
+                        self.diags.push(Diag::error("E0125", sp, "map keys are always String: write `[String: T]`").fix(sp, "String"));
+                    }
+                    TypeRef::Map(Box::new(value))
+                } else {
+                    self.expect(Tok::RBracket, "to close the list type")?;
+                    TypeRef::List(Box::new(inner))
+                }
             }
             Tok::Fn => {
                 self.bump();
@@ -441,6 +461,45 @@ impl<'a> Parser<'a> {
                 self.diags.push(Diag::error("E0110", sp, format!("`{}` is not a Vard keyword; use `fn`", name)).fix(sp, "fn"));
                 self.toks[self.pos].tok = Tok::Fn;
             }
+        }
+        // `on event(params) [if cond] { ... }`
+        if self.is_ident("on") && matches!(self.peek_at(1), Tok::Ident(_)) {
+            let start = self.bump().span;
+            let (event, event_span) = self.ident("event name")?;
+            let mut params = Vec::new();
+            if self.eat(&Tok::LParen) {
+                loop {
+                    if self.eat(&Tok::RParen) {
+                        break;
+                    }
+                    let (n, _) = self.ident("handler parameter name")?;
+                    // tolerate `msg: PushMessage` вЂ” the type comes from the event declaration
+                    if self.eat(&Tok::Colon) {
+                        self.type_ref()?;
+                    }
+                    params.push(n);
+                    if !self.eat(&Tok::Comma) {
+                        self.expect(Tok::RParen, "to close the handler parameters")?;
+                        break;
+                    }
+                }
+            }
+            let cond = if self.eat(&Tok::If) { Some(self.expr()?) } else { None };
+            let body = self.block()?;
+            let span = start.to(self.prev_span());
+            self.end_of_stmt()?;
+            return Ok(ViewMember::On { event, event_span, params, cond, body, span });
+        }
+        // `pref name[: T] = init`
+        if self.is_ident("pref") && matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Colon | Tok::Eq) {
+            let start = self.bump().span;
+            let (name, _) = self.ident("name")?;
+            let ty = if self.eat(&Tok::Colon) { Some(self.type_ref()?) } else { None };
+            self.expect(Tok::Eq, "(pref needs a default value)")?;
+            let init = self.expr()?;
+            let span = start.to(self.prev_span());
+            self.end_of_stmt()?;
+            return Ok(ViewMember::Pref { name, ty, init, span });
         }
         match self.peek() {
             Tok::Var | Tok::Const => {
@@ -585,6 +644,11 @@ impl<'a> Parser<'a> {
     // ---------- statements ----------
     fn block(&mut self) -> PResult<Vec<Stmt>> {
         self.expect(Tok::LBrace, "to open the block")?;
+        self.block_rest()
+    }
+
+    /// Statements up to and including the closing `}` (the `{` is already consumed).
+    fn block_rest(&mut self) -> PResult<Vec<Stmt>> {
         let mut out = Vec::new();
         loop {
             self.skip_newlines();
@@ -916,23 +980,72 @@ impl<'a> Parser<'a> {
                 return Ok(e);
             }
             Tok::LBracket => {
+                // `[:]` вЂ” empty map
+                if *self.peek() == Tok::Colon && *self.peek_at(1) == Tok::RBracket {
+                    self.bump();
+                    self.bump();
+                    return Ok(self.prog.add_expr(Expr::Map(Vec::new()), sp.to(self.prev_span())));
+                }
                 let mut items = Vec::new();
+                let mut pairs = Vec::new();
                 loop {
+                    self.skip_newlines();
                     if self.eat(&Tok::RBracket) {
                         break;
                     }
-                    items.push(self.expr()?);
+                    let first = self.expr()?;
+                    if self.eat(&Tok::Colon) {
+                        let v = self.expr()?;
+                        pairs.push((first, v));
+                    } else {
+                        items.push(first);
+                    }
+                    self.skip_newlines();
                     if !self.eat(&Tok::Comma) {
+                        self.skip_newlines();
                         self.expect(Tok::RBracket, "to close the list")?;
                         break;
                     }
                 }
-                Expr::List(items)
+                if !pairs.is_empty() {
+                    if !items.is_empty() {
+                        let bad = self.prev_span();
+                        return self.err("E0108", bad, "a map literal needs `key: value` for every entry");
+                    }
+                    Expr::Map(pairs)
+                } else {
+                    Expr::List(items)
+                }
             }
             Tok::LBrace => {
-                self.pos -= 1;
-                let body = self.block()?;
-                Expr::Lambda { params: Vec::new(), body: LambdaBody::Block(body) }
+                // Swift/Kotlin habit: `{ x => ... }`, `{ x -> ... }`, `{ x in ... }`
+                let mut params = Vec::new();
+                let mut j = 0;
+                while let Tok::Ident(n) = self.peek_at(j).clone() {
+                    params.push(n);
+                    j += 1;
+                    if *self.peek_at(j) == Tok::Comma {
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if !params.is_empty() && matches!(self.peek_at(j), Tok::FatArrow | Tok::Arrow | Tok::In) {
+                    let arrow = self.toks[self.pos + j].span;
+                    let fix_span = sp.to(arrow);
+                    let lhs = if params.len() == 1 { params[0].clone() } else { format!("({})", params.join(", ")) };
+                    self.diags.push(
+                        Diag::error("E0126", fix_span, format!("a lambda with parameters is written `{} => {{ ... }}`", lhs))
+                            .fix(fix_span, format!("{} => {{", lhs)),
+                    );
+                    self.pos += j + 1;
+                    let body = self.block_rest()?;
+                    Expr::Lambda { params, body: LambdaBody::Block(body) }
+                } else {
+                    self.pos -= 1;
+                    let body = self.block()?;
+                    Expr::Lambda { params: Vec::new(), body: LambdaBody::Block(body) }
+                }
             }
             other => {
                 self.pos = self.pos.saturating_sub(if other == Tok::Eof { 0 } else { 1 });

@@ -493,7 +493,15 @@ impl Runtime {
         let mut cur = self.nodes.get(key).and_then(|n| n.parent);
         while let Some(k) = cur {
             let Some(n) = self.nodes.get(k) else { break };
-            if let Some(bg) = n.background {
+            // a gradient paints over the background: judge contrast against its average color
+            let fill = match &n.gradient {
+                Some(g) if !g.is_empty() => {
+                    let avg = |sh: u32| g.iter().map(|c| (c >> sh) & 0xFF).sum::<u32>() / g.len() as u32;
+                    Some(avg(24) << 24 | avg(16) << 16 | avg(8) << 8 | avg(0))
+                }
+                _ => n.background,
+            };
+            if let Some(bg) = fill {
                 if bg & 0xFF != 0 {
                     layers.push(bg);
                     if bg & 0xFF == 0xFF {

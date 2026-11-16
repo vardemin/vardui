@@ -1,0 +1,164 @@
+// Platform features end to end: notification permission, push (foreground + tapped),
+// preferences (`pref`), secure storage (Keychain / Keystore), edge-to-edge insets
+// (`safeArea`) and predictive back (`on back` + `backProgress`).
+// Every piece runs headless too: see tests/*.vtest.
+
+enum Screen { home, inbox, message, settings }
+
+struct Note { id: String, title: String, body: String, route: String = "" }
+
+view App {
+  pref darkMode = false
+  pref launches = 0
+  state stack: [Screen] = [.home]
+  state notes: [Note] = []
+  state opened: Note? = nil
+  state pushToken = ""
+  state signedIn = false
+  state notify: PermissionStatus = .notDetermined
+
+  let screen = stack.last ?? .home
+
+  fn go(s: Screen) { stack.append(s) }
+  fn pop() { stack.removeAt(stack.count - 1) }
+  fn setDark(on: Bool) {
+    darkMode = on
+    setColorScheme(on ? .dark : .light)
+  }
+
+  on appear {
+    launches += 1
+    if darkMode { setColorScheme(.dark) }
+    notify = permissionStatus(.notifications)
+    signedIn = secureGet("session") != nil
+    getPushToken(t => { pushToken = t ?? "" })
+  }
+  on back if stack.count > 1 { pop() }
+  on deepLink(url) {
+    if url.endsWith("/settings") { stack = [.home, .settings] }
+    if url.endsWith("/inbox") { stack = [.home, .inbox] }
+  }
+  on pushReceived(msg) {
+    notes.insert(0, Note(id: msg.id, title: msg.title, body: msg.body, route: msg.data["route"] ?? ""))
+  }
+  on pushOpened(msg) {
+    opened = Note(id: msg.id, title: msg.title, body: msg.body, route: msg.data["route"] ?? "")
+    stack = [.home, .message]
+  }
+
+  Column(grow: 1) {
+    TopBar(title: titleOf(screen), canGoBack: stack.count > 1, onBack: pop)
+    Column(grow: 1, offsetX: stack.count > 1 ? backProgress * 72 : 0, opacity: 1 - backProgress * 0.4) {
+      if screen == .home {
+        Home(notify: notify, signedIn: signedIn, launches: launches, unread: notes.count,
+             onAsk: { requestPermission(.notifications, s => { notify = s }) },
+             onSignIn: {
+               if secureSet("session", "token-{launches}") { signedIn = true }
+             },
+             onSignOut: {
+               secureRemove("session")
+               signedIn = false
+             },
+             onOpen: go)
+      } else if screen == .inbox {
+        Inbox(notes: notes, onOpen: id => {
+          opened = notes.find(n => n.id == id)
+          go(.message)
+        })
+      } else if screen == .message {
+        Message(note: opened)
+      } else {
+        Settings(dark: darkMode, pushToken: pushToken, onDark: setDark, onReset: { launches = 0 })
+      }
+    }
+  }
+}
+
+fn titleOf(s: Screen) -> String {
+  if s == .inbox { return "Inbox" }
+  if s == .message { return "Message" }
+  if s == .settings { return "Settings" }
+  return "Vard native"
+}
+
+fn statusText(s: PermissionStatus) -> String {
+  if s == .granted { return "on" }
+  if s == .denied { return "denied" }
+  if s == .blocked { return "blocked in system settings" }
+  return "not asked yet"
+}
+
+view TopBar(title: String, canGoBack: Bool, onBack: fn()) {
+  // edge-to-edge: the bar paints under the status bar, its content stays below it
+  Row(safeArea: .top, background: .primary, paddingX: 8, paddingBottom: 8, paddingTop: 8, gap: 4, align: .center) {
+    if canGoBack {
+      Row(width: 44, height: 44, align: .center, justify: .center, role: .button, label: "Back", onTap: onBack) {
+        Text("‹", size: 28, color: .onPrimary)
+      }
+    }
+    Text(title, style: .heading, color: .onPrimary, paddingX: 8, grow: 1)
+  }
+}
+
+view Home(notify: PermissionStatus, signedIn: Bool, launches: Int, unread: Int,
+          onAsk: fn(), onSignIn: fn(), onSignOut: fn(), onOpen: fn(Screen)) {
+  Scroll(grow: 1, padding: 16, gap: 12, safeArea: .bottom) {
+    Card {
+      Text("Notifications", style: .heading)
+      Text("Notifications: {statusText(notify)}", color: .muted, id: "notify")
+      if notify == .notDetermined || notify == .denied {
+        Button("Enable notifications", onTap: onAsk)
+      }
+      if notify == .blocked {
+        Button("Open system settings", kind: .outline, onTap: { openAppSettings() })
+      }
+      if notify == .granted {
+        Button("Send a test notification", kind: .tonal, onTap: { showNotification("Hello from Vard", "Tap me to open the message", ["route": "message"]) })
+      }
+    }
+    Card {
+      Text("Account", style: .heading)
+      Text(signedIn ? "Signed in (session in secure storage)" : "Signed out", color: .muted, id: "account")
+      Button(signedIn ? "Sign out" : "Sign in", kind: signedIn ? .outline : .filled, onTap: signedIn ? onSignOut : onSignIn)
+    }
+    Row(gap: 12) {
+      Button("Inbox ({unread})", kind: .tonal, onTap: { onOpen(.inbox) }, grow: 1)
+      Button("Settings", kind: .tonal, onTap: { onOpen(.settings) }, grow: 1)
+    }
+    Text("App launches: {launches}", style: .caption, color: .muted, textAlign: .center, id: "launches")
+  }
+}
+
+view Inbox(notes: [Note], onOpen: fn(String)) {
+  Scroll(grow: 1, padding: 16, gap: 8, safeArea: .bottom) {
+    for n in notes by n.id {
+      Column(padding: 12, radius: 12, background: .surface, gap: 2, role: .button, onTap: { onOpen(n.id) }) {
+        Text(n.title, style: .label)
+        Text(n.body, color: .muted, maxLines: 2)
+      }
+    }
+    if notes.isEmpty {
+      Text("No messages yet", color: .muted, textAlign: .center, paddingY: 32)
+    }
+  }
+}
+
+view Message(note: Note?) {
+  Column(padding: 16, gap: 8, safeArea: .bottom) {
+    Text((note ?? Note(id: "", title: "Nothing selected", body: "")).title, style: .title)
+    Text((note ?? Note(id: "", title: "", body: "")).body)
+  }
+}
+
+view Settings(dark: Bool, pushToken: String, onDark: fn(Bool), onReset: fn()) {
+  Column(padding: 16, gap: 12, safeArea: .bottom) {
+    Row(height: 44, align: .center, gap: 12, role: .switch, checked: dark, label: "Dark mode", onTap: { onDark(!dark) }) {
+      Text("Dark mode", grow: 1)
+      Row(width: 50, height: 30, radius: 15, padding: 3, justify: dark ? .end : .start, background: dark ? .primary : .border) {
+        Column(width: 24, height: 24, radius: 12, background: #FFFFFF)
+      }
+    }
+    Text("Push token: {pushToken}", style: .caption, color: .muted, id: "token")
+    Button("Reset launch counter", kind: .outline, onTap: onReset)
+  }
+}

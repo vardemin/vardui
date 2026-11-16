@@ -5,9 +5,15 @@
 //!
 //! 1. `create` with the project's `.vard` sources and the screen size in dp,
 //! 2. `mount` the root view,
-//! 3. after every event (`tap`, `input_text`, `submit`, `scroll`, `set_dark`, `resize`)
-//!    fetch a `frame` — the laid-out tree as a flat, paint-ordered list of draw records
-//!    (see [`frame`] for the byte layout) — and draw it with the platform canvas.
+//! 3. after every event (`tap`, `input_text`, `submit`, `scroll`, `set_dark`, `resize`,
+//!    `set_insets`, `back*`, `emit`, `callback`) fetch a `frame` — the laid-out tree as a
+//!    flat, paint-ordered list of draw records (see [`frame`] for the byte layout) — and
+//!    draw it with the platform canvas.
+//!
+//! Native modules: the host installs a [`NativeHost`] (`set_host`); every `extern fn` call
+//! arrives there as `(name, JSON args)`. Function arguments are `{"$callback": id}` handles
+//! the host answers later with `callback(id, json, keep)`. Platform events (push, deep
+//! links, lifecycle) go in with `emit(name, json_args)`.
 //!
 //! Layout, text wrapping and hit-testing stay in the Rust core, so the native screen and
 //! `vard run --do layout` agree on every rectangle. Two surfaces expose the same calls:
@@ -19,6 +25,8 @@ mod jni_api;
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use vard_lang::compile;
+use vard_runtime::layout::apply_xf;
+pub use vard_runtime::native::NativeHost;
 use vard_runtime::node::Kind;
 use vard_runtime::rt::NodeKey;
 use vard_runtime::Runtime;
@@ -89,8 +97,8 @@ impl App {
         let rt = self.rt.as_ref()?;
         fn walk(rt: &Runtime, k: NodeKey, x: f32, y: f32) -> Option<NodeKey> {
             let n = rt.nodes.get(k)?;
-            if n.kind == Kind::Scroll && !contains(n.rect, x, y) {
-                return None; // Scroll clips its subtree
+            if (n.kind == Kind::Scroll || n.clip) && !contains(apply_xf(n.rect, n.xf), x, y) {
+                return None; // Scroll / clip: true clips its subtree
             }
             if let Some(hit) = n.children.iter().rev().find_map(|&c| walk(rt, c, x, y)) {
                 return Some(hit);
@@ -147,6 +155,15 @@ impl App {
         }
     }
 
+    /// Input `uid` got (or, with 0, everything lost) keyboard focus; the core keeps it
+    /// scrolled above the keyboard.
+    pub fn focus(&mut self, uid: u32) {
+        let k = if uid == 0 { None } else { self.by_uid(uid) };
+        if let Some(rt) = self.live() {
+            rt.set_focus(k);
+        }
+    }
+
     /// Fire `onSubmit` of Input `uid` (the IME action key).
     pub fn submit(&mut self, uid: u32) -> Status {
         let Some(k) = self.by_uid(uid) else { return self.status_ignored() };
@@ -168,9 +185,95 @@ impl App {
         }
     }
 
+    /// The system light/dark setting (an app's `setColorScheme` overrides it).
     pub fn set_dark(&mut self, dark: bool) {
         if let Some(rt) = self.rt.as_mut() {
-            rt.set_dark(dark);
+            rt.set_system_dark(dark);
+        }
+    }
+
+    /// Install the platform's native-module dispatcher. Call before `mount`.
+    pub fn set_host(&mut self, host: Box<dyn NativeHost>, platform: &str) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.set_host(host, platform);
+        }
+    }
+
+    /// Measure platform-font text with the host's shaper (see `TextMeasurer`).
+    pub fn set_measurer(&mut self, m: Box<dyn vard_runtime::text::TextMeasurer>) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.text.set_measurer(m);
+        }
+    }
+
+    /// Register a project font file (`fonts/Inter-SemiBold.ttf` -> family "Inter", 600).
+    pub fn add_font(&mut self, file_name: &str, bytes: &[u8]) -> Result<(), String> {
+        let rt = self.rt.as_mut().ok_or("the project has compile errors")?;
+        let stem = file_name.rsplit(['/', '\\']).next().unwrap_or(file_name);
+        let stem = stem.rsplit_once('.').map(|(a, _)| a).unwrap_or(stem);
+        let (family, weight, italic) = vard_runtime::text::parse_font_name(stem);
+        rt.text.add_font(&family, weight, italic, bytes)
+    }
+
+    /// System bars + display cutout (top, bottom, left, right) and keyboard height, dp.
+    pub fn set_insets(&mut self, top: f32, bottom: f32, left: f32, right: f32, keyboard: f32) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.set_insets(top, bottom, left, right, keyboard);
+        }
+    }
+
+    /// Deliver a native result to callback `id`; `keep` for listeners that fire repeatedly.
+    pub fn callback(&mut self, id: u64, json: &str, keep: bool) -> Status {
+        match self.live().map(|rt| rt.invoke_callback(id, json, keep)) {
+            Some(true) => Status::Handled,
+            Some(false) => Status::Ignored,
+            None => Status::Error,
+        }
+    }
+
+    pub fn release_callback(&mut self, id: u64) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.release_callback(id);
+        }
+    }
+
+    /// Platform event (`extern event name(...)`), `args` a JSON array.
+    pub fn emit(&mut self, name: &str, args: &str) -> Status {
+        match self.live().map(|rt| rt.emit(name, args)) {
+            Some(Ok(n)) if n > 0 => Status::Handled,
+            Some(Ok(_)) => Status::Ignored,
+            Some(Err(e)) => {
+                self.compile_diags.push_str(&format!("emit: {}\n", e));
+                Status::Error
+            }
+            None => Status::Error,
+        }
+    }
+
+    /// Whether the app takes the next back gesture (an enabled `on back` handler exists).
+    pub fn back_enabled(&mut self) -> bool {
+        self.live().is_some_and(|rt| rt.back_enabled())
+    }
+
+    /// Predictive back progress 0..1 while the gesture is in flight.
+    pub fn back_progress(&mut self, progress: f32) {
+        if let Some(rt) = self.live() {
+            rt.back_progress(progress);
+        }
+    }
+
+    /// Back committed. `Ignored` = the app did not handle it; the host does the system back.
+    pub fn back(&mut self) -> Status {
+        match self.live().map(|rt| rt.back()) {
+            Some(true) => Status::Handled,
+            Some(false) => Status::Ignored,
+            None => Status::Error,
+        }
+    }
+
+    pub fn back_cancel(&mut self) {
+        if let Some(rt) = self.live() {
+            rt.back_cancel();
         }
     }
 
@@ -185,7 +288,9 @@ impl App {
         self.frame.clear();
         if let Some(rt) = self.rt.as_mut().filter(|_| self.mounted) {
             rt.settle();
-            frame::encode(rt, &mut self.frame);
+            let mut buf = std::mem::take(&mut self.frame);
+            frame::encode(rt, &mut buf);
+            self.frame = buf;
         }
         &self.frame
     }
@@ -382,5 +487,103 @@ pub unsafe extern "C" fn vard_diagnostics(app: *mut App) -> *const c_char {
         let Some(a) = self::app(app) else { return std::ptr::null() };
         a.diag_c = CString::new(a.diagnostics().replace('\0', " ")).unwrap_or_default();
         a.diag_c.as_ptr()
+    })
+}
+
+/// Native-module callback for C/Swift hosts: answer `extern fn name(args_json)` with a
+/// NUL-terminated JSON string that stays valid until the next call (host-owned), or null
+/// when the function is not implemented.
+pub type VardNativeFn = unsafe extern "C" fn(ctx: *mut std::ffi::c_void, name: *const c_char, args_json: *const c_char) -> *const c_char;
+
+struct CHost {
+    f: VardNativeFn,
+    ctx: *mut std::ffi::c_void,
+}
+
+impl NativeHost for CHost {
+    fn call(&mut self, name: &str, args_json: &str) -> Option<String> {
+        let (n, a) = (CString::new(name).ok()?, CString::new(args_json).ok()?);
+        // SAFETY: the host promised a valid callback and a string valid until the next call.
+        let r = unsafe { (self.f)(self.ctx, n.as_ptr(), a.as_ptr()) };
+        if r.is_null() {
+            None
+        } else {
+            unsafe { CStr::from_ptr(r) }.to_str().ok().map(str::to_string)
+        }
+    }
+}
+
+/// Install the native-module dispatcher (before `vard_mount`).
+///
+/// # Safety
+/// `app` from [`vard_create`]; `f` callable with `ctx` on the UI thread for the app's life.
+#[no_mangle]
+pub unsafe extern "C" fn vard_set_host(app: *mut App, f: VardNativeFn, ctx: *mut std::ffi::c_void, platform: *const c_char) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.set_host(Box::new(CHost { f, ctx }), cstr(platform).unwrap_or("native"));
+        }
+    })
+}
+
+/// # Safety
+/// `app` from [`vard_create`]; `json` NUL-terminated UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vard_callback(app: *mut App, id: u64, json: *const c_char, keep: bool) -> i32 {
+    guard(-1, || match (self::app(app), cstr(json)) {
+        (Some(a), Some(j)) => a.callback(id, j, keep) as i32,
+        _ => -1,
+    })
+}
+
+/// # Safety
+/// `app` from [`vard_create`]; strings NUL-terminated UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vard_emit(app: *mut App, name: *const c_char, args_json: *const c_char) -> i32 {
+    guard(-1, || match (self::app(app), cstr(name), cstr(args_json)) {
+        (Some(a), Some(n), Some(j)) => a.emit(n, j) as i32,
+        _ => -1,
+    })
+}
+
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_set_insets(app: *mut App, top: f32, bottom: f32, left: f32, right: f32, keyboard: f32) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.set_insets(top, bottom, left, right, keyboard)
+        }
+    })
+}
+
+/// 1 = the app handled back, 0 = do the system back.
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_back(app: *mut App) -> i32 {
+    guard(-1, || self::app(app).map_or(-1, |a| a.back() as i32))
+}
+
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_back_progress(app: *mut App, progress: f32) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.back_progress(progress)
+        }
+    })
+}
+
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_back_cancel(app: *mut App) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.back_cancel()
+        }
     })
 }

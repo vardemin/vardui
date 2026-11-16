@@ -1,0 +1,6 @@
+@view Nav
+tap "Open detail"
+expect "Detail screen"
+back 0.3
+back
+expect "Open detail"

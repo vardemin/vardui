@@ -1,20 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- enableOnBackInvokedCallback: predictive back (system back-to-home animation, and
+         gesture progress for `on back` handlers via VardActivity). -->
     <application
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- The Vard runtime keeps all app state; handle configuration changes in place
-             instead of recreating the activity (and losing state). -->
+             instead of recreating the activity (and losing state). singleTop: notification
+             taps and deep links arrive in onNewIntent. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|keyboard|keyboardHidden|density|fontScale"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- deep links: vard://anything -> `on deepLink(url)` -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vard" />
             </intent-filter>
         </activity>
     </application>

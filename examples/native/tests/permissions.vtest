@@ -1,0 +1,8 @@
+# notification permission: ask -> granted; deny twice -> blocked -> settings
+expect "Notifications: not asked yet"
+tap "Enable notifications"
+expect "Notifications: on"
+expect no "Enable notifications"
+expect "Send a test notification"
+tap "Send a test notification"
+storage

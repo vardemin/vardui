@@ -3,6 +3,7 @@
 //! Output discipline: every command prints the minimum that lets an LLM decide its next
 //! step. Success is one line. Failures carry file:line, the source line and a fix.
 
+mod bindings;
 mod mcp;
 
 use std::path::{Path, PathBuf};
@@ -14,6 +15,29 @@ pub const CHEATSHEET: &str = include_str!("../../../knowledge/llms.txt");
 const AGENTS_MD: &str = include_str!("../../../knowledge/AGENTS.md");
 const SKILL_APP: &str = include_str!("../../../knowledge/skills/vard-app/SKILL.md");
 const SKILL_DEBUG: &str = include_str!("../../../knowledge/skills/vard-debug/SKILL.md");
+const SKILL_NATIVE: &str = include_str!("../../../knowledge/skills/vard-native/SKILL.md");
+const SKILL_DESIGN: &str = include_str!("../../../knowledge/skills/vard-design/SKILL.md");
+pub const DESIGN_DOC: &str = include_str!("../../../knowledge/design.md");
+pub const NATIVE_DOC: &str = include_str!("../../../knowledge/native.md");
+
+/// `vard add NAME`: (name, file written into the project, contents, what to do next)
+const ADDONS: &[(&str, &str, &str, &str)] = &[
+    (
+        "tailwind",
+        "tailwind.vard",
+        include_str!("../../../knowledge/kits/tailwind.vard"),
+        "Tailwind palette (.slate50 ... .rose950), semantic tokens with dark values, TwButton TwCard Badge Avatar Field.
+Class -> prop mapping: `vard doc design`.",
+    ),
+    (
+        "firebase",
+        "firebase.vard",
+        include_str!("../../../knowledge/modules/firebase.vard"),
+        "Auth, Firestore (your structs), Analytics; push comes through the std push events.
+Android: put google-services.json into platforms/android/app/ and build with -Pvard.firebase=true.
+Headless: `mock authCurrentUser {\"uid\": \"u1\"}`, `resolve firestoreListNotes [[...], null]`.",
+    ),
+];
 
 const USAGE: &str = "\
 vard — AI-first UI framework toolchain
@@ -25,6 +49,9 @@ vard — AI-first UI framework toolchain
   vard doc [TOPIC]                       cheat sheet; topics: elements common actions std errors <Element> <View>
   vard explain CODE                      explain a diagnostic code (E/W/R/L)
   vard new NAME                          scaffold an app with agent instructions, skills and MCP config
+  vard add NAME [PATH]                   add a kit or module to the project: tailwind, firebase
+  vard bindings [PATH] --kotlin [--package P] [--class C] [--out FILE]
+                                         typed Kotlin base class for the project's extern fn/event
   vard mcp                               MCP server on stdio
 
 PATH is a .vard file or a project directory (default: current directory).";
@@ -49,7 +76,7 @@ fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
 
 /// First argument that is not a flag or a flag's value.
 fn positional(args: &[String]) -> Option<&str> {
-    const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size"];
+    const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets"];
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
@@ -97,6 +124,19 @@ fn dispatch(args: &[String]) -> (String, bool) {
             Some(name) => cmd_new(name),
             None => ("usage: vard new NAME".into(), false),
         },
+        "add" => {
+            let mut pos = rest.iter().filter(|a| !a.starts_with("--"));
+            match pos.next() {
+                Some(name) => cmd_add(name, pos.next().map(|s| s.as_str()).unwrap_or("."), flag(rest, "--force")),
+                None => (format!("usage: vard add NAME [PATH]; available: {}", ADDONS.iter().map(|a| a.0).collect::<Vec<_>>().join(" ")), false),
+            }
+        }
+        "bindings" => cmd_bindings(
+            positional(rest).unwrap_or("."),
+            opt(rest, "--package").unwrap_or("dev.vard.generated"),
+            opt(rest, "--class").unwrap_or("AppModule"),
+            opt(rest, "--out"),
+        ),
         "mcp" => {
             mcp::serve();
             (String::new(), true)
@@ -365,6 +405,14 @@ pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
     let Some(topic) = topic else { return (CHEATSHEET.to_string(), true) };
     match topic {
         "common" => return (registry::common_doc(), true),
+        "design" => return (DESIGN_DOC.to_string(), true),
+        "native" => return (NATIVE_DOC.to_string(), true),
+        "tailwind" | "firebase" => {
+            let a = ADDONS.iter().find(|a| a.0 == topic).unwrap();
+            return (format!("{}
+(add to a project: `vard add {}`)
+", a.2, a.0), true);
+        }
         "actions" => return (vard_runtime::ACTIONS_HELP.to_string(), true),
         "std" => return (vard_lang::STD_SRC.to_string(), true),
         "elements" => {
@@ -421,7 +469,7 @@ pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
             true,
         );
     }
-    (format!("no doc topic `{}`; topics: elements common actions std errors, an element/enum name, or a view name", topic), false)
+    (format!("no doc topic `{}`; topics: elements common actions std errors design native tailwind firebase, an element/enum name, or a view name", topic), false)
 }
 
 pub fn cmd_explain(code: &str) -> (String, bool) {
@@ -460,6 +508,8 @@ fn cmd_new(name: &str) -> (String, bool) {
         (".mcp.json", NEW_MCP),
         (".claude/skills/vard-app/SKILL.md", SKILL_APP),
         (".claude/skills/vard-debug/SKILL.md", SKILL_DEBUG),
+        (".claude/skills/vard-native/SKILL.md", SKILL_NATIVE),
+        (".claude/skills/vard-design/SKILL.md", SKILL_DESIGN),
     ];
     for (rel, text) in files {
         let p = root.join(rel);
@@ -473,4 +523,39 @@ fn cmd_new(name: &str) -> (String, bool) {
         }
     }
     (format!("created {}/ (app.vard, tests/, AGENTS.md, skills, .mcp.json)\nnext: cd {} && vard run && vard test\n", name, name), true)
+}
+
+pub fn cmd_add(name: &str, dir: &str, force: bool) -> (String, bool) {
+    let Some((_, file, text, next)) = ADDONS.iter().find(|a| a.0 == name) else {
+        return (format!("unknown add-on `{}`; available: {}", name, ADDONS.iter().map(|a| a.0).collect::<Vec<_>>().join(" ")), false);
+    };
+    let path = Path::new(dir).join(file);
+    if path.exists() && !force {
+        return (format!("{} already exists (use --force to overwrite)", display(&path)), false);
+    }
+    if let Err(e) = std::fs::write(&path, text) {
+        return (format!("cannot write {}: {}", display(&path), e), false);
+    }
+    (format!("added {}\n{}\nnext: vard check {}\n", display(&path), next, dir), true)
+}
+
+pub fn cmd_bindings(path: &str, package: &str, class: &str, out: Option<&str>) -> (String, bool) {
+    let files = match load(path) {
+        Ok(f) => f,
+        Err(e) => return (e, false),
+    };
+    let c = compile(&files);
+    if c.has_errors() {
+        return (format!("{}{}", c.render_diags(), summary(&c, files.len())), false);
+    }
+    match bindings::kotlin(&c, &bindings::Opts { package, class }) {
+        Ok(code) => match out {
+            Some(f) => match std::fs::write(f, &code) {
+                Ok(()) => (format!("wrote {} (subclass `{}`, register it in VardActivity.modules())\n", f, class), true),
+                Err(e) => (format!("cannot write {}: {}", f, e), false),
+            },
+            None => (code, true),
+        },
+        Err(e) => (e, false),
+    }
 }

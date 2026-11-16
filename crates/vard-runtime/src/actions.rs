@@ -8,6 +8,7 @@
 //! After every mutating action the output is a *diff* of the semantic tree, so the
 //! effect of an interaction costs a few tokens to observe.
 
+use crate::json::{parse_loose, Json};
 use crate::node::Kind;
 use crate::rt::{NodeKey, Runtime};
 use crate::value::Value;
@@ -20,14 +21,26 @@ actions (one per line, or separated by `;`):
   tap SEL              tap an element (bubbles to the nearest onTap)
   type SEL \"text\"      replace an Input's text (fires value binding + onChange)
   submit SEL           fire an Input's onSubmit
+  focus SEL            give an Input keyboard focus (scrolls it above the keyboard)
   scroll SEL DY        scroll the nearest Scroll by DY dp
   why SEL              explain the element's size and position, up the parent chain
   find SEL             print the matching element's line
   state                dump all `state` variables by view
   expect SEL|\"text\"    fail unless present;   expect no \"text\"   fail if present
   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
-  theme light|dark     switch theme        size W H    resize the screen
-  mock NAME VALUE      return VALUE from `extern fn NAME` (Int, Float, \"String\", true/false, nil)
+  theme light|dark     switch the system theme        size W H    resize the screen
+  insets T B [L R]     system bar/cutout insets in dp     keyboard H   show the keyboard (0 hides)
+  mock NAME VALUE      `extern fn NAME` returns VALUE (JSON or bare word) and its callbacks receive it
+  resolve NAME VALUE   complete the oldest pending call of NAME (callback extern without a mock)
+  send NAME VALUE      deliver VALUE to a pending listener callback and keep it pending
+  pending              list native calls still waiting for a result
+  emit EVENT [ARGS..]  deliver a platform event (`extern event`), each ARG as JSON
+  push received|opened \"Title\" \"Body\" [{\"key\":\"value\"}]   a push message (foreground / tapped)
+  back [PROGRESS|cancel]   system back: commit, or a predictive gesture at PROGRESS 0..1, or cancel it
+  permission NAME STATUS        set a permission (notDetermined|granted|denied|blocked)
+  permission NAME answer STATUS what the system dialog answers next (default granted)
+  storage              prefs, secure values, permissions, shown notifications
+  restart              cold-start the app again (storage is kept, UI state is not)
   log                  print() output and native calls so far
   lint                 UI problems (overflow, tap targets, contrast, ...)
   shot FILE.png [S]    write a screenshot at scale S (default 1)
@@ -58,7 +71,7 @@ impl Runtime {
         Err(format!("@{} has no onTap handler (and neither do its ancestors)", uid))
     }
 
-    fn input_under(&self, key: NodeKey) -> Option<NodeKey> {
+    pub(crate) fn input_under(&self, key: NodeKey) -> Option<NodeKey> {
         let n = self.nodes.get(key)?;
         if n.kind == Kind::Input {
             return Some(key);
@@ -118,8 +131,10 @@ impl Runtime {
 
     pub fn resize(&mut self, w: f32, h: f32) {
         self.screen = (w, h);
+        let v = Value::List(std::rc::Rc::new(vec![Value::Float(w as f64), Value::Float(h as f64)]));
+        self.sig_set(self.screen_sig, v);
         self.layout_dirty = true;
-        self.layout();
+        self.settle();
     }
 
     // ---------------- action language ----------------
@@ -199,6 +214,12 @@ impl Runtime {
                 self.input_text(k, text)?;
                 Ok(ActionOut::Mutated)
             }
+            "focus" => {
+                let k = self.sel(toks, 1, cmd)?;
+                let input = self.input_under(k).ok_or("`focus` needs an Input (or an element containing one)")?;
+                self.set_focus(Some(input));
+                Ok(ActionOut::Mutated)
+            }
             "submit" => {
                 let k = self.sel(toks, 1, cmd)?;
                 self.submit(k)?;
@@ -212,8 +233,8 @@ impl Runtime {
             }
             "theme" => {
                 match toks.get(1).map(|s| s.as_str()) {
-                    Some("dark") => self.set_dark(true),
-                    Some("light") => self.set_dark(false),
+                    Some("dark") => self.set_system_dark(true),
+                    Some("light") => self.set_system_dark(false),
                     _ => return Err("usage: theme light|dark".into()),
                 }
                 Ok(ActionOut::Text(String::new()))
@@ -230,14 +251,110 @@ impl Runtime {
                 if !self.prog.extern_index.contains_key(name) {
                     return Err(format!("no `extern fn {}` in this project", name));
                 }
-                let v = match raw.as_str() {
-                    "true" => Value::Bool(true),
-                    "false" => Value::Bool(false),
-                    "nil" => Value::Nil,
-                    s => s.parse::<i64>().map(Value::Int).or_else(|_| s.parse::<f64>().map(Value::Float)).unwrap_or_else(|_| Value::str(s)),
-                };
+                let v = if raw == "nil" { Json::Null } else { parse_loose(raw) };
                 self.mocks.insert(name.clone(), v);
                 Ok(ActionOut::Text(String::new()))
+            }
+            "resolve" => {
+                let name = toks.get(1).ok_or("usage: resolve NAME VALUE")?;
+                let raw = toks.get(2).map(|s| s.as_str()).unwrap_or("null");
+                let v = if raw == "nil" { Json::Null } else { parse_loose(raw) };
+                self.resolve_pending(name, &v)?;
+                Ok(ActionOut::Mutated)
+            }
+            "send" => {
+                let name = toks.get(1).ok_or("usage: send NAME VALUE")?;
+                let raw = toks.get(2).map(|s| s.as_str()).unwrap_or("null");
+                let v = if raw == "nil" { Json::Null } else { parse_loose(raw) };
+                self.send_pending(name, &v)?;
+                Ok(ActionOut::Mutated)
+            }
+            "pending" => Ok(ActionOut::Text(self.pending_text())),
+            "emit" => {
+                let name = toks.get(1).ok_or("usage: emit EVENT [ARGS...]")?;
+                let args: Vec<Json> = toks[2..].iter().map(|t| if t == "nil" { Json::Null } else { parse_loose(t) }).collect();
+                let n = self.emit(name, &Json::Array(args).to_string())?;
+                if n == 0 {
+                    self.log.push(format!("event {}: no handler is listening", name));
+                }
+                Ok(ActionOut::Mutated)
+            }
+            "push" => {
+                let usage = "usage: push received|opened \"Title\" \"Body\" [{\"key\": \"value\"}]";
+                let kind = toks.get(1).map(|s| s.as_str()).ok_or(usage)?;
+                let event = match kind {
+                    "received" => "pushReceived",
+                    "opened" => "pushOpened",
+                    _ => return Err(usage.into()),
+                };
+                let mut msg = serde_json::Map::new();
+                self.next_push += 1;
+                msg.insert("id".into(), Json::String(format!("push-{}", self.next_push)));
+                msg.insert("title".into(), Json::String(toks.get(2).cloned().unwrap_or_default()));
+                msg.insert("body".into(), Json::String(toks.get(3).cloned().unwrap_or_default()));
+                msg.insert("data".into(), toks.get(4).map(|t| parse_loose(t)).unwrap_or(Json::Object(Default::default())));
+                let n = self.emit(event, &Json::Array(vec![Json::Object(msg)]).to_string())?;
+                if n == 0 {
+                    self.log.push(format!("event {}: no handler is listening", event));
+                }
+                Ok(ActionOut::Mutated)
+            }
+            "back" => match toks.get(1).map(|s| s.as_str()) {
+                None => {
+                    if !self.back() {
+                        self.log.push("back: not handled by the app — the system closes it (or shows the predictive back-to-home animation)".into());
+                    }
+                    Ok(ActionOut::Mutated)
+                }
+                Some("cancel") => {
+                    self.back_cancel();
+                    Ok(ActionOut::Mutated)
+                }
+                Some(p) => {
+                    let p: f32 = p.parse().map_err(|_| "usage: back [PROGRESS 0..1 | cancel]")?;
+                    if !self.back_enabled() {
+                        return Err("no enabled `on back` handler: the system would run its own back animation".into());
+                    }
+                    self.back_progress(p);
+                    Ok(ActionOut::Mutated)
+                }
+            },
+            "insets" => {
+                let num = |i: usize| toks.get(i).and_then(|s| s.parse::<f32>().ok());
+                let (t, b) = (num(1).ok_or("usage: insets TOP BOTTOM [LEFT RIGHT]")?, num(2).ok_or("usage: insets TOP BOTTOM [LEFT RIGHT]")?);
+                let kb = self.keyboard;
+                self.set_insets(t, b, num(3).unwrap_or(0.0), num(4).unwrap_or(0.0), kb);
+                Ok(ActionOut::Mutated)
+            }
+            "keyboard" => {
+                let h: f32 = toks.get(1).and_then(|s| s.parse().ok()).ok_or("usage: keyboard HEIGHT (0 hides it)")?;
+                let [t, b, l, r] = self.insets;
+                self.set_insets(t, b, l, r, h);
+                Ok(ActionOut::Mutated)
+            }
+            "permission" => {
+                let usage = "usage: permission NAME notDetermined|granted|denied|blocked  |  permission NAME answer granted|denied";
+                let name = toks.get(1).ok_or(usage)?;
+                let known = self.prog.enums.iter().find(|e| e.name == "Permission").map(|e| e.variants.clone()).unwrap_or_default();
+                if !known.contains(name) {
+                    return Err(format!("unknown permission `{}`; permissions: {}", name, known.join(" ")));
+                }
+                const STATUSES: &[&str] = &["notDetermined", "granted", "denied", "blocked"];
+                match (toks.get(2).map(|s| s.as_str()), toks.get(3)) {
+                    (Some("answer"), Some(s)) if STATUSES.contains(&s.as_str()) => {
+                        self.sim.answers.insert(name.clone(), s.clone());
+                    }
+                    (Some(s), None) if STATUSES.contains(&s) => {
+                        self.sim.permissions.insert(name.clone(), s.to_string());
+                    }
+                    _ => return Err(usage.into()),
+                }
+                Ok(ActionOut::Text(String::new()))
+            }
+            "storage" => Ok(ActionOut::Text(self.storage_text())),
+            "restart" => {
+                self.restart()?;
+                Ok(ActionOut::Mutated)
             }
             "why" => {
                 let k = self.sel(toks, 1, cmd)?;
@@ -352,22 +469,31 @@ fn diff(before: &[(u32, String)], after: &[(u32, String)]) -> String {
 /// Split on newlines and `;` outside quotes; drop blanks and `#`-comment lines.
 fn split_commands(script: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut in_q = false;
-    let mut prev = ' ';
-    for c in script.chars() {
-        match c {
-            '"' if prev != '\\' => {
-                in_q = !in_q;
-                cur.push(c);
-            }
-            '\n' | ';' if !in_q => out.push(std::mem::take(&mut cur)),
-            _ => cur.push(c),
+    for line in script.lines() {
+        let t = line.trim();
+        if t.is_empty() || t == "#" || t.starts_with("# ") {
+            continue; // comment line (may contain `;`)
         }
-        prev = c;
+        if t.starts_with('@') && t[1..].starts_with(|c: char| c.is_ascii_alphabetic()) {
+            continue; // .vtest header (@view, @size, @dark, @app) — applied by `vard test`
+        }
+        let mut cur = String::new();
+        let mut in_q = false;
+        let mut prev = ' ';
+        for c in line.chars() {
+            match c {
+                '"' if prev != '\\' => {
+                    in_q = !in_q;
+                    cur.push(c);
+                }
+                ';' if !in_q => out.push(std::mem::take(&mut cur)),
+                _ => cur.push(c),
+            }
+            prev = c;
+        }
+        out.push(cur);
     }
-    out.push(cur);
-    out.into_iter().filter(|c| !c.trim().is_empty() && !c.trim_start().starts_with("# ") && c.trim() != "#").collect()
+    out.into_iter().filter(|c| !c.trim().is_empty()).collect()
 }
 
 fn tokenize(cmd: &str) -> Vec<String> {
@@ -376,6 +502,34 @@ fn tokenize(cmd: &str) -> Vec<String> {
     while let Some(&c) = chars.peek() {
         if c.is_whitespace() {
             chars.next();
+        } else if c == '{' || c == '[' {
+            // a JSON value: read until the brackets balance (strings may contain anything)
+            let mut s = String::new();
+            let (mut depth, mut in_str, mut esc) = (0i32, false, false);
+            for c in chars.by_ref() {
+                s.push(c);
+                if in_str {
+                    match c {
+                        _ if esc => esc = false,
+                        '\\' => esc = true,
+                        '"' => in_str = false,
+                        _ => {}
+                    }
+                    continue;
+                }
+                match c {
+                    '"' => in_str = true,
+                    '{' | '[' => depth += 1,
+                    '}' | ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push(s);
         } else if c == '"' {
             chars.next();
             let mut s = String::new();

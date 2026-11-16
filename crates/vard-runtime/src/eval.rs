@@ -16,6 +16,8 @@ pub(crate) enum Root {
 pub(crate) enum Seg {
     Field(Rc<str>),
     Index(usize),
+    /// map key; writing a missing key inserts it
+    Key(Rc<str>),
 }
 
 /// An assignable location: a state signal or a local, plus a path into its value.
@@ -41,7 +43,44 @@ fn path_mut<'v>(v: &'v mut Value, path: &[Seg]) -> Option<&'v mut Value> {
             let l = Rc::make_mut(l);
             path_mut(l.get_mut(*i)?, rest)
         }
+        (Seg::Key(k), Value::Map(m)) => {
+            let m = Rc::make_mut(m);
+            let i = match m.iter().position(|(n, _)| n == k) {
+                Some(i) => i,
+                None => {
+                    m.push((k.clone(), Value::Nil));
+                    m.len() - 1
+                }
+            };
+            path_mut(&mut m[i].1, rest)
+        }
         _ => None,
+    }
+}
+
+/// After a write through a map key: a key set to `nil` is removed.
+fn prune_nil_keys(v: &mut Value, path: &[Seg]) {
+    let Some((seg, rest)) = path.split_first() else { return };
+    match (seg, v) {
+        (Seg::Field(f), Value::Struct(s)) => {
+            if let Some(slot) = Rc::make_mut(s).fields.iter_mut().find(|(n, _)| n == f) {
+                prune_nil_keys(&mut slot.1, rest);
+            }
+        }
+        (Seg::Index(i), Value::List(l)) => {
+            if let Some(x) = Rc::make_mut(l).get_mut(*i) {
+                prune_nil_keys(x, rest);
+            }
+        }
+        (Seg::Key(k), Value::Map(m)) => {
+            let m = Rc::make_mut(m);
+            if rest.is_empty() {
+                m.retain(|(n, v)| n != k || !matches!(v, Value::Nil));
+            } else if let Some(slot) = m.iter_mut().find(|(n, _)| n == k) {
+                prune_nil_keys(&mut slot.1, rest);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -50,6 +89,7 @@ fn path_get(mut v: Value, path: &[Seg]) -> Value {
         v = match (seg, &v) {
             (Seg::Field(f), Value::Struct(s)) => s.fields.iter().find(|(n, _)| n == f).map(|(_, v)| v.clone()).unwrap_or(Value::Nil),
             (Seg::Index(i), Value::List(l)) => l.get(*i).cloned().unwrap_or(Value::Nil),
+            (Seg::Key(k), Value::Map(m)) => m.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or(Value::Nil),
             _ => Value::Nil,
         };
     }
@@ -84,6 +124,18 @@ impl Runtime {
                 _ => Value::Enum(Rc::from(name.as_str())),
             },
             Expr::List(items) => Value::List(Rc::new(items.iter().map(|i| self.eval(p, *i, sc)).collect())),
+            Expr::Map(pairs) => {
+                let mut out: Vec<(Rc<str>, Value)> = Vec::with_capacity(pairs.len());
+                for (k, v) in pairs {
+                    let k: Rc<str> = Rc::from(self.eval(p, *k, sc).display().as_str());
+                    let v = self.eval(p, *v, sc);
+                    match out.iter_mut().find(|(n, _)| *n == k) {
+                        Some(slot) => slot.1 = v,
+                        None => out.push((k, v)),
+                    }
+                }
+                Value::Map(Rc::new(out))
+            }
             Expr::Unary(op, x) => {
                 let v = self.eval(p, *x, sc);
                 match (op, v) {
@@ -114,6 +166,10 @@ impl Runtime {
                     (Value::List(l), "isEmpty") => Value::Bool(l.is_empty()),
                     (Value::List(l), "first") => l.first().cloned().unwrap_or(Value::Nil),
                     (Value::List(l), "last") => l.last().cloned().unwrap_or(Value::Nil),
+                    (Value::Map(m), "count") => Value::Int(m.len() as i64),
+                    (Value::Map(m), "isEmpty") => Value::Bool(m.is_empty()),
+                    (Value::Map(m), "keys") => Value::List(Rc::new(m.iter().map(|(k, _)| Value::Str(k.clone())).collect())),
+                    (Value::Map(m), "values") => Value::List(Rc::new(m.iter().map(|(_, v)| v.clone()).collect())),
                     (Value::Struct(s), f) => s.fields.iter().find(|(n, _)| &**n == f).map(|(_, v)| v.clone()).unwrap_or(Value::Nil),
                     _ => Value::Nil,
                 }
@@ -122,6 +178,7 @@ impl Runtime {
                 let r = self.eval(p, *recv, sc);
                 let i = self.eval(p, *idx, sc);
                 match (&r, &i) {
+                    (Value::Map(m), Value::Str(k)) => m.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or(Value::Nil),
                     (Value::List(l), Value::Int(i)) => match l.get(*i as usize) {
                         Some(v) if *i >= 0 => v.clone(),
                         _ => {
@@ -155,6 +212,25 @@ impl Runtime {
         }
         if let Some(&i) = p.extern_index.get(name) {
             return Value::Func(Rc::new(Func::Extern(i)));
+        }
+        match name {
+            "safeArea" => return self.sig_get(self.insets_sig),
+            "keyboardHeight" => return self.sig_get(self.keyboard_sig),
+            "backProgress" => return self.sig_get(self.back_sig),
+            "screenWidth" | "screenHeight" => {
+                let s = self.sig_get(self.screen_sig);
+                let i = if name == "screenWidth" { 0 } else { 1 };
+                return match s {
+                    Value::List(l) => l.get(i).cloned().unwrap_or(Value::Float(0.0)),
+                    _ => Value::Float(0.0),
+                };
+            }
+            "isDark" => {
+                let t = self.theme_sig;
+                return self.sig_get(t);
+            }
+            "platform" => return Value::Str(self.platform.clone()),
+            _ => {}
         }
         self.error("R0007", p.span(e), format!("`{}` is not available here", name));
         Value::Nil
@@ -393,29 +469,19 @@ impl Runtime {
         out
     }
 
-    /// Native call boundary. In the headless runtime externs are recorded and answered
-    /// from `mock` values (or a zero value of the declared return type).
-    fn call_extern(&mut self, p: &Program, i: usize, argv: Vec<Option<Value>>) -> Value {
-        let d = &p.externs[i];
-        let shown: Vec<String> = argv.iter().map(|a| a.as_ref().map(|v| v.repr()).unwrap_or_else(|| "nil".into())).collect();
-        self.native_calls.push(format!("{}({})", d.name, shown.join(", ")));
-        if let Some(v) = self.mocks.get(&d.name) {
-            return v.clone();
+    /// Run the body of `on event(params) { ... }` (member `member` of view `view`).
+    pub(crate) fn run_handler(&mut self, p: &Program, view: usize, member: usize, scope: ScopeId, args: &[Value]) {
+        let ViewMember::On { params, body, span, .. } = &p.views[view].members[member] else { return };
+        if !self.enter(*span) {
+            return;
         }
-        fn zero(t: &TypeRef) -> Value {
-            match t {
-                TypeRef::Named(n, _) => match n.as_str() {
-                    "Int" => Value::Int(0),
-                    "Float" => Value::Float(0.0),
-                    "String" => Value::str(""),
-                    "Bool" => Value::Bool(false),
-                    _ => Value::Nil,
-                },
-                TypeRef::List(_) => Value::List(Rc::new(Vec::new())),
-                _ => Value::Nil,
-            }
+        let sc = self.new_scope(Some(scope), None, None);
+        for (i, name) in params.iter().enumerate() {
+            self.declare(sc, name, Binding::Val(args.get(i).cloned().unwrap_or(Value::Nil)));
         }
-        d.ret.as_ref().map(zero).unwrap_or(Value::Unit)
+        self.exec(p, body, sc);
+        self.dispose_scope(sc);
+        self.depth -= 1;
     }
 
     fn call1(&mut self, p: &Program, f: &Value, arg: Value, span: Span) -> Value {
@@ -426,13 +492,29 @@ impl Runtime {
         let span = p.span(e);
         let argv: Vec<Value> = args.iter().map(|a| self.eval(p, a.value, sc)).collect();
         let arg = |i: usize| argv.get(i).cloned().unwrap_or(Value::Nil);
-        // in-place list mutation
+        // in-place list / map mutation
         if matches!(name, "append" | "insert" | "removeAt" | "remove" | "removeWhere" | "clear") {
             let Some(place) = self.place(p, recv, sc) else {
-                self.error("R0009", span, format!("`.{}` needs a mutable list", name));
+                self.error("R0009", span, format!("`.{}` needs a mutable list or map", name));
                 return Value::Unit;
             };
-            let Value::List(cur) = self.place_get(&place) else { return Value::Unit };
+            let cur = self.place_get(&place);
+            if let Value::Map(_) = cur {
+                drop(cur);
+                let key = arg(0).display();
+                self.place_update(&place, span, |v| {
+                    if let Value::Map(m) = v {
+                        let m = Rc::make_mut(m);
+                        if name == "clear" {
+                            m.clear();
+                        } else {
+                            m.retain(|(k, _)| **k != *key);
+                        }
+                    }
+                });
+                return Value::Unit;
+            }
+            let Value::List(cur) = cur else { return Value::Unit };
             let drop_mask: Vec<bool> = match name {
                 "removeWhere" => cur.iter().map(|it| self.call1(p, &arg(0), it.clone(), span).truthy()).collect(),
                 _ => Vec::new(),
@@ -478,6 +560,7 @@ impl Runtime {
         }
         let r = self.eval(p, recv, sc);
         match (&r, name) {
+            (Value::Map(m), "contains") => Value::Bool(m.iter().any(|(k, _)| **k == *arg(0).display())),
             (Value::Str(s), "trim") => Value::str(s.trim()),
             (Value::Str(s), "upper") => Value::str(&s.to_uppercase()),
             (Value::Str(s), "lower") => Value::str(&s.to_lowercase()),
@@ -575,6 +658,7 @@ impl Runtime {
                 let mut pl = self.place(p, *b, sc)?;
                 match self.eval(p, *i, sc) {
                     Value::Int(i) if i >= 0 => pl.path.push(Seg::Index(i as usize)),
+                    Value::Str(k) => pl.path.push(Seg::Key(k)),
                     _ => return None,
                 }
                 Some(pl)
@@ -619,6 +703,9 @@ impl Runtime {
                     }
                     None => false,
                 };
+                if pl.path.iter().any(|s| matches!(s, Seg::Key(_))) {
+                    prune_nil_keys(&mut v, &pl.path);
+                }
                 self.signals[*s].value = v;
                 if ok {
                     self.notify(*s);
@@ -631,6 +718,9 @@ impl Runtime {
                 if let Some((_, Binding::Val(v))) = slot {
                     if let Some(target) = path_mut(v, &pl.path) {
                         f(target);
+                    }
+                    if pl.path.iter().any(|s| matches!(s, Seg::Key(_))) {
+                        prune_nil_keys(v, &pl.path);
                     }
                 }
             }
@@ -658,8 +748,19 @@ impl Runtime {
     }
 
     // ---------------- statements ----------------
+    /// A nested block (`if`/`for` body) runs in its own scope, so its locals end with it —
+    /// unless a closure captured them (the scope is then pinned, see `native::pin`).
+    fn block(&mut self, p: &Program, stmts: &[Stmt], sc: ScopeId, bind: Option<(&str, Value)>) -> Flow {
+        let inner = self.new_scope(Some(sc), None, None);
+        if let Some((name, v)) = bind {
+            self.declare(inner, name, Binding::Val(v));
+        }
+        let f = self.exec(p, stmts, inner);
+        self.dispose_scope(inner);
+        f
+    }
+
     fn exec(&mut self, p: &Program, stmts: &[Stmt], sc: ScopeId) -> Flow {
-        let mark = self.scopes.get(sc).map(|s| s.vars.len()).unwrap_or(0);
         let mut flow = Flow::Next;
         for s in stmts {
             match s {
@@ -681,7 +782,7 @@ impl Runtime {
                 }
                 Stmt::If { cond, then, els } => {
                     let branch = if self.eval(p, *cond, sc).truthy() { then } else { els };
-                    if let Flow::Return(v) = self.exec(p, branch, sc) {
+                    if let Flow::Return(v) = self.block(p, branch, sc, None) {
                         flow = Flow::Return(v);
                         break;
                     }
@@ -690,13 +791,7 @@ impl Runtime {
                     let Value::List(items) = self.eval(p, *iter, sc) else { continue };
                     let mut ret = None;
                     for it in items.iter() {
-                        let m = self.scopes.get(sc).map(|s| s.vars.len()).unwrap_or(0);
-                        self.declare(sc, var, Binding::Val(it.clone()));
-                        let f = self.exec(p, body, sc);
-                        if let Some(s) = self.scopes.get_mut(sc) {
-                            s.vars.truncate(m);
-                        }
-                        if let Flow::Return(v) = f {
+                        if let Flow::Return(v) = self.block(p, body, sc, Some((var, it.clone()))) {
                             ret = Some(v);
                             break;
                         }
@@ -711,10 +806,6 @@ impl Runtime {
                     break;
                 }
             }
-        }
-        // block scoping: drop locals declared in this block
-        if let Some(s) = self.scopes.get_mut(sc) {
-            s.vars.truncate(mark);
         }
         flow
     }

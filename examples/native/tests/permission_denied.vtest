@@ -1,0 +1,8 @@
+# the user refuses twice: the second refusal blocks the dialog, the app offers settings
+permission notifications answer denied
+tap "Enable notifications"
+expect "Notifications: denied"
+tap "Enable notifications"
+expect "Notifications: blocked in system settings"
+expect "Open system settings"
+tap "Open system settings"

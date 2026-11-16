@@ -1,0 +1,25 @@
+# Firebase without a device: answer the module's externs from the test.
+expect "Continue anonymously"
+tap "Continue anonymously"
+expect "Signing in…" disabled
+pending
+# sign-in completes; Firebase then reports the user through authChanged
+resolve authSignInAnonymously {"user": {"uid": "u1", "isAnonymous": true}}
+emit authChanged {"uid": "u1", "isAnonymous": true}
+expect "No notes yet"
+pending
+# the live listener delivers the collection
+send firestoreListenNotes [{"id": "a", "title": "Buy milk"}, {"id": "b", "title": "Call Ann"}]
+expect "Buy milk"
+expect "Call Ann"
+type #draft "Ship it"
+tap "Add"
+log
+resolve firestoreAddNote ["c", {"code": "permission-denied", "message": "Missing or insufficient permissions."}]
+expect #error
+expect "Missing or insufficient permissions."
+# the listener fires again after the server accepted another write
+send firestoreListenNotes [{"id": "a", "title": "Buy milk"}, {"id": "b", "title": "Call Ann"}, {"id": "d", "title": "From another device"}]
+expect "From another device"
+tap "Sign out"
+log

@@ -64,6 +64,8 @@ pub enum Expr {
     /// `.name` — enum variant or design token, resolved from the expected type.
     Dot(String),
     List(Vec<ExprId>),
+    /// `["key": value, ...]`, `[:]` = empty map. Keys are Strings.
+    Map(Vec<(ExprId, ExprId)>),
     Unary(UnOp, ExprId),
     Binary(BinOp, ExprId, ExprId),
     Ternary(ExprId, ExprId, ExprId),
@@ -96,6 +98,8 @@ pub enum Stmt {
 pub enum TypeRef {
     Named(String, Span),
     List(Box<TypeRef>),
+    /// `[String: T]`
+    Map(Box<TypeRef>),
     Opt(Box<TypeRef>),
     Fn(Vec<TypeRef>, Option<Box<TypeRef>>),
 }
@@ -123,6 +127,14 @@ pub struct ExternDecl {
     pub name: String,
     pub params: Vec<Param>,
     pub ret: Option<TypeRef>,
+    pub span: Span,
+}
+
+/// `extern event name(params)` — something the platform tells the app (push, back, lifecycle).
+#[derive(Clone, Debug)]
+pub struct EventDecl {
+    pub name: String,
+    pub params: Vec<Param>,
     pub span: Span,
 }
 
@@ -167,8 +179,12 @@ pub enum UiNode {
 #[derive(Clone, Debug)]
 pub enum ViewMember {
     State { name: String, ty: Option<TypeRef>, init: ExprId, span: Span },
+    /// `pref name = init` — state persisted in the platform preferences, shared app-wide by name.
+    Pref { name: String, ty: Option<TypeRef>, init: ExprId, span: Span },
     Let { name: String, ty: Option<TypeRef>, value: ExprId, span: Span },
     Fn(FnDecl),
+    /// `on event(params) [if cond] { body }` — handler of a platform event while the view is alive.
+    On { event: String, event_span: Span, params: Vec<String>, cond: Option<ExprId>, body: Vec<Stmt>, span: Span },
     Node(UiId),
 }
 
@@ -197,6 +213,7 @@ pub struct Program {
     pub consts: Vec<ConstDecl>,
     pub fns: Vec<FnDecl>,
     pub externs: Vec<ExternDecl>,
+    pub events: Vec<EventDecl>,
     pub views: Vec<ViewDecl>,
     pub themes: Vec<ThemeDecl>,
     // ---- filled by the checker ----
@@ -206,6 +223,10 @@ pub struct Program {
     pub struct_index: HashMap<String, usize>,
     pub const_index: HashMap<String, usize>,
     pub extern_index: HashMap<String, usize>,
+    pub event_index: HashMap<String, usize>,
+    /// User code mentions `safeArea` (prop or value): it manages system insets itself, so the
+    /// runtime does not pad the root.
+    pub uses_safe_area: bool,
 }
 
 impl Program {

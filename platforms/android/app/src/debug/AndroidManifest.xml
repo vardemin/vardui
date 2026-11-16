@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: inject a push message through the real delivery path.
+             adb shell am broadcast -a dev.vard.DEBUG_PUSH -p dev.vard.host \
+               -\-es title "Hi" -\-es body "Text" -\-es data '{"route":"inbox"}' -->
+        <receiver
+            android:name="dev.vard.host.DebugPushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.vard.DEBUG_PUSH" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

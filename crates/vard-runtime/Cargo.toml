@@ -10,4 +10,5 @@ vard-lang = { path = "../vard-lang" }
 slotmap = "1"
 fontdue = "0.9"
 dejavu = "2.37"
-tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tiny-skia ={ version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }

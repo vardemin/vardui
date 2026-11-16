@@ -56,10 +56,22 @@ Rows of a derived list are read-only: mutate the state list by id.
 
 Design system: define tokens in `theme { }` / `theme dark { }`, then views with an enum
 `kind`/`size` parameter (see `vard doc std` for Button). Use those views everywhere instead
-of styling raw elements in screens.
+of styling raw elements in screens. Visual vocabulary (shadow, gradient, Grid, wrap, fonts,
+Tailwind mapping): skill vard-design / `vard doc design`.
 
 Native feature: `extern fn share(text: String) -> Bool`; call it from a handler; test with
-`mock share true` and check `native: share("...")` in the output.
+`mock share true` and check `native: share("...")` in the output. Async results take a
+callback (`extern fn load(done: fn([Item]))`), platform events are `on name(x) { }` members
+(`on appear`, `on back`, `on pushOpened(m)`), settings that must survive restarts are
+`pref name = default`. Full guide: skill vard-native / `vard doc native`.
+
+Navigation stack (with Android predictive back):
+```
+enum Screen { list, detail }
+state stack: [Screen] = [.list]
+on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
+if (stack.last ?? .list) == .list { ListScreen(onOpen: { stack.append(.detail) }) } else { Detail() }
+```
 
 ## Layout rules (CSS-flex semantics)
 - Column/Row: children stretch on the cross axis by default (`align: .stretch`).

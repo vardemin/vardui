@@ -1,6 +1,45 @@
-// Vard standard views. Written in Vard itself on top of the built-in elements:
+// Vard standard library. Views are written in Vard itself on top of the built-in elements:
 // a design system is ordinary Vard code, and this file is the reference example.
+// The platform section declares what every host (Android, iOS, headless) implements.
 
+// ---------------- platform ----------------
+struct Insets { top: Float = 0, bottom: Float = 0, left: Float = 0, right: Float = 0 }
+enum ColorScheme { system, light, dark }
+enum Haptic { light, medium, heavy, success, warning, error }
+
+extern fn setColorScheme(scheme: ColorScheme)
+extern fn openUrl(url: String)
+extern fn shareText(text: String)
+extern fn haptic(kind: Haptic)
+
+extern event appear()
+extern event back()
+extern event appResume()
+extern event appPause()
+extern event deepLink(url: String)
+
+enum Permission { notifications, camera, microphone, location, photos, contacts }
+enum PermissionStatus { notDetermined, granted, denied, blocked }
+extern fn permissionStatus(permission: Permission) -> PermissionStatus
+extern fn requestPermission(permission: Permission, done: fn(PermissionStatus))
+extern fn openAppSettings()
+
+extern fn prefGet(key: String) -> String?
+extern fn prefSet(key: String, value: String)
+extern fn prefRemove(key: String)
+
+extern fn secureGet(key: String) -> String?
+extern fn secureSet(key: String, value: String) -> Bool
+extern fn secureRemove(key: String)
+
+struct PushMessage { id: String = "", title: String = "", body: String = "", data: [String: String] = [:] }
+extern fn getPushToken(done: fn(String?))
+extern fn showNotification(title: String, body: String, data: [String: String] = [:])
+extern event pushReceived(message: PushMessage)
+extern event pushOpened(message: PushMessage)
+extern event pushTokenChanged(token: String)
+
+// ---------------- views ----------------
 enum ButtonKind { filled, tonal, outline, text }
 
 view Button(label: String, onTap: fn() = {}, kind: ButtonKind = .filled, enabled: Bool = true) {

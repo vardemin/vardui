@@ -1,0 +1,17 @@
+# pref survives a restart; the session lives in secure storage
+expect "App launches: 1"
+tap "Sign in"
+expect "Signed in (session in secure storage)"
+tap "Settings"
+tap "Dark mode"
+expect "Dark mode" checked
+restart
+expect "App launches: 2"
+expect "Signed in (session in secure storage)"
+tap "Settings"
+expect "Dark mode" checked
+expect "Push token: headless-push-token"
+back
+tap "Sign out"
+expect "Signed out"
+storage

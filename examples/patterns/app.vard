@@ -28,3 +28,17 @@ view App {
     Button("Add", onTap: { items.append(Item(id: items.count + 1, name: "New {items.count + 1}")) }, alignSelf: .stretch)
   }
 }
+
+// Navigation stack with predictive back (skill vard-app)
+enum Screen { list, detail }
+view Nav {
+  state stack: [Screen] = [.list]
+  on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
+  Column(grow: 1, offsetX: backProgress * 64) {
+    if (stack.last ?? .list) == .list {
+      Button("Open detail", onTap: { stack.append(.detail) })
+    } else {
+      Text("Detail screen")
+    }
+  }
+}

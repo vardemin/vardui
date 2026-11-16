@@ -4,7 +4,7 @@
 //! "session" is the list of actions passed to `vard_run`, replayed deterministically
 //! from a fresh mount in a few milliseconds. No process to keep alive, nothing to leak.
 
-use crate::{cmd_check, cmd_doc, cmd_explain, cmd_run, cmd_test, RunOpts};
+use crate::{cmd_add, cmd_bindings, cmd_check, cmd_doc, cmd_explain, cmd_run, cmd_test, RunOpts};
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
@@ -20,7 +20,7 @@ fn tools() -> Value {
         },
         {
             "name": "vard_run",
-            "description": "Run the app headless and drive it with actions; returns text only. Actions (one per line or `;`-separated): tree | layout | tap SEL | type SEL \"text\" | submit SEL | scroll SEL DY | why SEL | find SEL | state | expect SEL|\"text\" | expect no \"text\" | theme light|dark | size W H | mock NAME VALUE | log | lint | stats. Selectors: @12 (id from tree), #id, \"label\". Mutating actions print a diff of the semantic tree. Each call starts from a fresh app, so pass the whole action sequence.",
+            "description": "Run the app headless and drive it with actions; returns text only. Actions (one per line or `;`-separated): tree | layout | tap SEL | type SEL \"text\" | submit SEL | focus SEL | scroll SEL DY | why SEL | find SEL | state | expect SEL|\"text\" | expect no \"text\" | theme light|dark | size W H | log | lint | stats. Platform: mock NAME JSON | resolve NAME JSON | send NAME JSON | pending | emit EVENT JSON.. | push received|opened \"T\" \"B\" {data} | back [0..1|cancel] | insets T B | keyboard H | permission NAME STATUS | permission NAME answer STATUS | storage | restart. Selectors: @12 (id from tree), #id, \"label\". Mutating actions print a diff of the semantic tree. Each call starts from a fresh app, so pass the whole action sequence.",
             "inputSchema": { "type": "object", "properties": {
                 "path": { "type": "string", "description": "file or project directory (default: .)" },
                 "actions": { "type": "string", "description": "action script (default: tree)" },
@@ -48,8 +48,21 @@ fn tools() -> Value {
         },
         {
             "name": "vard_doc",
-            "description": "Reference on demand. No topic: the full cheat sheet. Topics: elements, common, actions, std, errors, an element name (Column, Text, ...), an enum name, or a view name.",
+            "description": "Reference on demand. No topic: the full cheat sheet. Topics: elements, common, actions, std, errors, design (styling; Tailwind/Material/iOS mapping), native (push, permissions, storage, back, insets, native modules), tailwind, firebase, an element name (Column, Text, ...), an enum name, or a view name.",
             "inputSchema": { "type": "object", "properties": { "topic": { "type": "string" }, "path": { "type": "string" } } }
+        },
+        {
+            "name": "vard_add",
+            "description": "Add a kit or module to the project: `tailwind` (palette, dark tokens, components) or `firebase` (Auth, Firestore, Analytics externs; push via std events).",
+            "inputSchema": { "type": "object", "properties": { "name": { "type": "string" }, "path": { "type": "string", "description": "project directory (default: .)" } }, "required": ["name"] }
+        },
+        {
+            "name": "vard_bindings",
+            "description": "Generate a typed Kotlin base class (data classes, enums, abstract functions, event emitters) for the project's extern fn / extern event declarations. Implement it in Kotlin and return it from VardActivity.modules().",
+            "inputSchema": { "type": "object", "properties": {
+                "path": { "type": "string" }, "package": { "type": "string" }, "class": { "type": "string" },
+                "out": { "type": "string", "description": "write to this file instead of returning the code" }
+            } }
         },
         {
             "name": "vard_explain",
@@ -113,6 +126,14 @@ fn call(name: &str, a: &Value) -> Value {
         }
         "vard_doc" => {
             let (t, ok) = cmd_doc(s("topic"), path);
+            text_result(t, ok)
+        }
+        "vard_add" => {
+            let (t, ok) = cmd_add(s("name").unwrap_or(""), path, false);
+            text_result(t, ok)
+        }
+        "vard_bindings" => {
+            let (t, ok) = cmd_bindings(path, s("package").unwrap_or("dev.vard.generated"), s("class").unwrap_or("AppModule"), s("out"));
             text_result(t, ok)
         }
         "vard_explain" => {

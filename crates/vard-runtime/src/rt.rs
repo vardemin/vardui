@@ -11,11 +11,13 @@
 //!
 //! Ownership is a tree of `Scope`s; disposing a scope frees everything created under it.
 
+use crate::json::Json;
+use crate::native::{Callbacks, Deferred, Handler, NativeHost, Pending, Sim, SAFE_ALL};
 use crate::node::{Kind, Node};
 use crate::text::TextEngine;
-use crate::value::{Func, Value};
+use crate::value::{Func, StructVal, Value};
 use slotmap::{new_key_type, SlotMap};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
 use vard_lang::ast::*;
 use vard_lang::check::VIEW_OUTER_PROPS;
@@ -48,6 +50,8 @@ pub(crate) struct Signal {
     pub value: Value,
     pub subs: Vec<Obs>,
     pub name: Option<Rc<str>>,
+    /// `pref` name: writes are persisted to the platform preferences.
+    pub persist: Option<Rc<str>>,
 }
 
 pub(crate) struct Computed {
@@ -106,6 +110,10 @@ pub(crate) struct Scope {
     pub nodes: Vec<NodeKey>,
     pub frags: Vec<FragId>,
     pub view: Option<Rc<str>>,
+    /// A temporary call scope captured by a callback still waiting for a native result.
+    /// Disposal is postponed until the last pin goes (`zombie`).
+    pub pins: u32,
+    pub zombie: bool,
 }
 
 pub(crate) enum FItem {
@@ -140,18 +148,48 @@ pub struct Runtime {
     next_uid: u32,
     pub root: NodeKey,
     pub(crate) root_scope: ScopeId,
-    theme_sig: SigId,
+    pub(crate) theme_sig: SigId,
     pub tokens: HashMap<String, (u32, u32)>,
     pub(crate) consts: HashMap<usize, Value>,
     pub log: Vec<String>,
     pub errors: Vec<String>,
     pub native_calls: Vec<String>,
-    pub mocks: HashMap<String, Value>,
+    pub mocks: HashMap<String, Json>,
     pub text: TextEngine,
     pub screen: (f32, f32),
     pub layout_dirty: bool,
     pub(crate) depth: u32,
     pub stats: Stats,
+    // ---- platform ----
+    pub(crate) host: Option<Box<dyn NativeHost>>,
+    pub platform: Rc<str>,
+    pub sim: Sim,
+    pub(crate) callbacks: Callbacks,
+    pub(crate) next_callback: u64,
+    pub(crate) pending: Vec<Pending>,
+    pub(crate) deferred: Deferred,
+    pub(crate) handlers: Vec<Handler>,
+    pub(crate) appear: VecDeque<Handler>,
+    /// system bars + cutout: top, bottom, left, right (dp)
+    pub insets: [f32; 4],
+    pub keyboard: f32,
+    pub(crate) insets_sig: SigId,
+    pub(crate) keyboard_sig: SigId,
+    pub(crate) back_sig: SigId,
+    /// [width, height]
+    pub(crate) screen_sig: SigId,
+    pub(crate) system_dark: bool,
+    pub(crate) scheme_override: Option<bool>,
+    pub(crate) prefs: HashMap<String, SigId>,
+    pub(crate) dirty_prefs: Vec<SigId>,
+    /// theme `font: "..."` — default family for Text/Input
+    pub default_font: Option<Rc<str>>,
+    /// project directory for `Image("assets/...")` in the headless rasterizer
+    pub asset_dir: Option<std::path::PathBuf>,
+    pub(crate) root_view: Option<String>,
+    pub(crate) next_push: u64,
+    /// Input with keyboard focus
+    pub focused: Option<NodeKey>,
 }
 
 impl Runtime {
@@ -179,14 +217,37 @@ impl Runtime {
                 }
             }
         }
+        let default_font = c.program.themes.iter().flat_map(|t| t.entries.iter()).find(|(n, _, _)| n == "font").and_then(|(_, e, _)| {
+            match c.program.expr(*e) {
+                Expr::Str(parts) => match parts.as_slice() {
+                    [StrPart::Lit(s)] => Some(Rc::from(s.as_str())),
+                    _ => None,
+                },
+                _ => None,
+            }
+        });
         let mut signals: SlotMap<SigId, Signal> = SlotMap::with_key();
         let mut scopes: SlotMap<ScopeId, Scope> = SlotMap::with_key();
         let mut frags: SlotMap<FragId, Frag> = SlotMap::with_key();
         let mut nodes: SlotMap<NodeKey, Node> = SlotMap::with_key();
         let root_scope = scopes.insert(Scope::default());
-        let theme_sig = signals.insert(Signal { value: Value::Bool(false), subs: Vec::new(), name: None });
+        let mut sys = |v: Value| signals.insert(Signal { value: v, subs: Vec::new(), name: None, persist: None });
+        let theme_sig = sys(Value::Bool(false));
+        let zero_insets = Value::Struct(Rc::new(StructVal {
+            name: Rc::from("Insets"),
+            fields: ["top", "bottom", "left", "right"].iter().map(|f| (Rc::from(*f), Value::Float(0.0))).collect(),
+        }));
+        let insets_sig = sys(zero_insets);
+        let keyboard_sig = sys(Value::Float(0.0));
+        let back_sig = sys(Value::Float(0.0));
+        let screen_sig = sys(Value::List(Rc::new(vec![Value::Float(width as f64), Value::Float(height as f64)])));
         let root_frag = frags.insert(Frag::default());
-        let root = nodes.insert(Node::new(0, Kind::Column, root_frag, Span::default()));
+        let mut root_node = Node::new(0, Kind::Column, root_frag, Span::default());
+        if !c.program.uses_safe_area {
+            // The app does not manage insets: keep its content out of the system bars.
+            root_node.safe = SAFE_ALL;
+        }
+        let root = nodes.insert(root_node);
         Runtime {
             prog: Rc::new(c.program),
             sources: Rc::new(c.sources),
@@ -214,7 +275,60 @@ impl Runtime {
             layout_dirty: true,
             depth: 0,
             stats: Stats::default(),
+            host: None,
+            platform: Rc::from("headless"),
+            sim: Sim::default(),
+            callbacks: HashMap::new(),
+            next_callback: 0,
+            pending: Vec::new(),
+            deferred: VecDeque::new(),
+            handlers: Vec::new(),
+            appear: VecDeque::new(),
+            insets: [0.0; 4],
+            keyboard: 0.0,
+            insets_sig,
+            keyboard_sig,
+            back_sig,
+            screen_sig,
+            system_dark: false,
+            scheme_override: None,
+            prefs: HashMap::new(),
+            dirty_prefs: Vec::new(),
+            default_font,
+            asset_dir: None,
+            root_view: None,
+            next_push: 0,
+            focused: None,
         }
+    }
+
+    /// Tear the UI down and mount the root view again, keeping platform storage (prefs,
+    /// secure values, permissions) — what a cold app restart looks like to the app.
+    pub fn restart(&mut self) -> Result<(), String> {
+        let view = self.root_view.clone().ok_or("nothing is mounted")?;
+        let kids = self.scopes[self.root_scope].kids.clone();
+        for k in kids {
+            self.dispose_scope(k);
+        }
+        // app-wide pref signals live in the root scope; drop them too
+        let sigs = std::mem::take(&mut self.scopes[self.root_scope].sigs);
+        for s in sigs {
+            self.signals.remove(s);
+        }
+        let frag = self.nodes[self.root].frag;
+        self.frags[frag].items.clear();
+        self.nodes[self.root].children.clear();
+        self.handlers.clear();
+        self.appear.clear();
+        self.callbacks.clear();
+        self.pending.clear();
+        self.deferred.clear();
+        self.prefs.clear();
+        self.dirty_prefs.clear();
+        self.consts.clear();
+        self.scheme_override = None;
+        self.apply_scheme();
+        self.mount(&view)
     }
 
     /// Instantiate `view` as the app root.
@@ -230,16 +344,26 @@ impl Runtime {
             return Err(format!("view `{}` cannot be the root: it has required parameters ({})", view, required.join(", ")));
         }
         let (frag, root, sc) = (self.nodes[self.root].frag, self.root, self.root_scope);
+        self.root_view = Some(view.to_string());
         self.instantiate_view(&p, vi, &[], &[], sc, frag, root);
         self.reflatten(root);
         self.settle();
         Ok(())
     }
 
-    /// Run pending effects, then layout. Call after any event.
+    /// Run pending effects, deferred native results and `on appear` handlers, persist
+    /// changed `pref`s, then layout. Call after any event.
     pub fn settle(&mut self) {
         let p = self.prog.clone();
-        self.flush(&p);
+        for _ in 0..100 {
+            self.flush(&p);
+            if !self.run_deferred() {
+                break;
+            }
+        }
+        if !self.dirty_prefs.is_empty() {
+            self.persist_prefs();
+        }
         self.layout();
     }
 
@@ -275,7 +399,7 @@ impl Runtime {
 
     // ---------------- reactive graph ----------------
     pub(crate) fn new_signal(&mut self, owner: ScopeId, value: Value, name: Option<&str>) -> SigId {
-        let id = self.signals.insert(Signal { value, subs: Vec::new(), name: name.map(Rc::from) });
+        let id = self.signals.insert(Signal { value, subs: Vec::new(), name: name.map(Rc::from), persist: None });
         self.scopes[owner].sigs.push(id);
         id
     }
@@ -318,6 +442,9 @@ impl Runtime {
     }
     pub(crate) fn notify(&mut self, id: SigId) {
         let Some(s) = self.signals.get(id) else { return };
+        if s.persist.is_some() && !self.dirty_prefs.contains(&id) {
+            self.dirty_prefs.push(id);
+        }
         let subs = s.subs.clone();
         for o in subs {
             self.mark(o);
@@ -454,6 +581,12 @@ impl Runtime {
     }
 
     pub(crate) fn dispose_scope(&mut self, id: ScopeId) {
+        if let Some(s) = self.scopes.get_mut(id) {
+            if s.pins > 0 {
+                s.zombie = true;
+                return;
+            }
+        }
         let Some(sc) = self.scopes.remove(id) else { return };
         if let Some(o) = sc.owner {
             if let Some(os) = self.scopes.get_mut(o) {
@@ -674,12 +807,41 @@ impl Runtime {
                 self.declare(vsc, &f.name, Binding::Val(func));
             }
         }
-        for m in &view.members {
+        for (mi, m) in view.members.iter().enumerate() {
             match m {
                 ViewMember::State { name, init, .. } => {
                     let v = self.untracked(|rt| rt.eval(p, *init, vsc));
                     let s = self.new_signal(vsc, v, Some(name));
                     self.declare(vsc, name, Binding::Sig(s));
+                }
+                ViewMember::Pref { name, ty, init, .. } => {
+                    let s = match self.prefs.get(name.as_str()) {
+                        Some(&s) if self.signals.contains_key(s) => s,
+                        _ => {
+                            let init_v = self.untracked(|rt| rt.eval(p, *init, vsc));
+                            let v = match self.pref_load(name) {
+                                Some(j) => match ty {
+                                    Some(t) => self.decode_json(p, &j, t),
+                                    None => self.decode_like(&j, &init_v),
+                                },
+                                None => init_v,
+                            };
+                            let root = self.root_scope;
+                            let s = self.new_signal(root, v, Some(name));
+                            self.signals[s].persist = Some(Rc::from(name.as_str()));
+                            self.prefs.insert(name.clone(), s);
+                            s
+                        }
+                    };
+                    self.declare(vsc, name, Binding::Sig(s));
+                }
+                ViewMember::On { event, .. } => {
+                    let h = crate::native::Handler { event: Rc::from(event.as_str()), view: vi, member: mi, scope: vsc };
+                    if event == "appear" {
+                        self.appear.push_back(h);
+                    } else {
+                        self.handlers.push(h);
+                    }
                 }
                 ViewMember::Let { name, value, .. } => {
                     let c = self.new_comp(vsc, *value, vsc);

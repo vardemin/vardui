@@ -49,7 +49,7 @@ pub fn compile(files: &[(String, String)]) -> Compilation {
 
     let mut checker = check::Checker::new(&program, &sources);
     checker.run();
-    let check::Checker { diags: mut cdiags, dot_kinds, .. } = checker;
+    let check::Checker { diags: mut cdiags, dot_kinds, uses_safe_area, .. } = checker;
     if syntax_errors {
         // A declaration lost to a syntax error makes its uses look undefined; hide those cascades.
         cdiags.retain(|d| !matches!(d.code, "E0201" | "E0203" | "E0206" | "E0209" | "W0402"));
@@ -64,5 +64,7 @@ pub fn compile(files: &[(String, String)]) -> Compilation {
     program.struct_index = program.structs.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
     program.const_index = program.consts.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
     program.extern_index = program.externs.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
+    program.event_index = program.events.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
+    program.uses_safe_area = uses_safe_area;
     Compilation { sources, program, diags }
 }

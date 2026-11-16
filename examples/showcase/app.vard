@@ -1,0 +1,95 @@
+// "Make it look like Tailwind UI": the kit from `vard add tailwind` (tailwind.vard) plus
+// plain props. Shadows, gradients, per-corner radii, Grid, wrapping rows, weights,
+// letter spacing, offsets — everything a CSS framework design needs.
+
+struct Stat { label: String, value: String, delta: String, up: Bool }
+struct Member { name: String, role: String, initials: String, color: Color }
+
+view App {
+  state email = ""
+  state plan = "pro"
+  state tags: [String] = ["Design", "Engineering", "Marketing", "Sales", "Support", "Finance"]
+  state picked: [String] = ["Design"]
+  let stats = [
+    Stat(label: "Revenue", value: "$48.2k", delta: "+12.5%", up: true),
+    Stat(label: "Users", value: "2,840", delta: "+4.1%", up: true),
+    Stat(label: "Churn", value: "1.9%", delta: "-0.3%", up: false),
+    Stat(label: "NPS", value: "62", delta: "+8", up: true),
+  ]
+  let team = [
+    Member(name: "Leslie Alexander", role: "Co-Founder / CEO", initials: "LA", color: #4F46E5),
+    Member(name: "Michael Foster", role: "Co-Founder / CTO", initials: "MF", color: #0369A1),
+    Member(name: "Dries Vincent", role: "Business Relations", initials: "DV", color: #BE123C),
+  ]
+
+  fn toggle(t: String) {
+    if picked.contains(t) { picked.remove(t) } else { picked.append(t) }
+  }
+
+  Scroll(grow: 1, background: .surface, safeArea: .bottom, gap: 20, paddingBottom: 24) {
+    // hero: bg-gradient-to-br from-indigo-600 to-violet-500, rounded-b-3xl — drawn under the status bar
+    Column(gradient: [#4F46E5, #8B5CF6], gradientAngle: 135, radiusBottomLeft: 24, radiusBottomRight: 24, safeArea: .top,
+           paddingX: 24, paddingTop: 32, paddingBottom: 40, gap: 8) {
+      Text("WORKSPACE", size: 12, weight: .semibold, letterSpacing: 1.6, color: .indigo50)
+      Text("Good morning, Leslie", size: 28, lineHeight: 34, weight: .bold, color: #FFFFFF)
+      Text("Here is what happened while you were away.", color: #FFFFFF)
+    }
+    // stats: grid grid-cols-2 gap-4, -mt-8 overlap
+    Grid(columns: 2, gap: 12, paddingX: 16, offsetY: -36) {
+      for s in stats by s.label {
+        Column(padding: 16, gap: 4, radius: 12, background: .card, shadow: .md) {
+          Text(s.label, size: 13, weight: .medium, color: .muted)
+          Text(s.value, size: 24, weight: .bold, letterSpacing: -0.5)
+          Row(gap: 4, align: .center) {
+            Badge(s.delta, tone: s.up ? .green : .red)
+            Text("vs last week", size: 12, color: .muted)
+          }
+        }
+      }
+    }
+    Column(paddingX: 16, gap: 20, offsetY: -36) {
+      TwCard {
+        Text("Team", size: 16, weight: .semibold)
+        for m in team by m.name {
+          Row(gap: 12, align: .center, paddingY: 6, borderBottom: 1) {
+            Avatar(m.initials, color: m.color)
+            Column(grow: 1, gap: 2) {
+              Text(m.name, size: 14, weight: .semibold)
+              Text(m.role, size: 13, color: .muted)
+            }
+            Row(minWidth: 44, height: 44, justify: .end, align: .center, role: .link, label: "Edit {m.name}", onTap: { print("edit {m.name}") }) {
+              Text("Edit", size: 14, weight: .medium, color: .primary, underline: true)
+            }
+          }
+        }
+      }
+      TwCard {
+        Text("Interests", size: 16, weight: .semibold)
+        Row(wrap: true, gap: 8, paddingY: 0) {
+          for t in tags by t {
+            // 44dp touch target around a 32dp pill
+            Row(height: 44, align: .center, role: .button, label: t, checked: picked.contains(t), onTap: { toggle(t) }) {
+              Row(paddingX: 12, height: 32, radius: 999, align: .center,
+                  background: picked.contains(t) ? .primary : .card, border: 1, borderColor: picked.contains(t) ? .primary : .ring) {
+                Text(t, size: 13, weight: .medium, color: picked.contains(t) ? .onPrimary : .text)
+              }
+            }
+          }
+        }
+        Text("“Simplicity is the ultimate sophistication.”", italic: true, color: .muted, size: 14)
+      }
+      TwCard {
+        Field("Email address", value: email, placeholder: "you@example.com", id: "email")
+        Row(gap: 12) {
+          TwButton("Subscribe", onTap: { print("subscribe {email}") }, enabled: email.contains("@"), grow: 1)
+          TwButton("Later", variant: .secondary)
+        }
+        Row(gap: 8) {
+          TwButton("Soft", variant: .soft, size: .sm)
+          TwButton("Ghost", variant: .ghost, size: .sm)
+          TwButton("Delete", variant: .danger, size: .sm)
+        }
+      }
+    }
+  }
+}
