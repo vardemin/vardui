@@ -1,66 +1,67 @@
-# Работа с ИИ-агентами
+# Working with AI agents
 
-VardUI проектировался вокруг одного вопроса: *сколько стоит агенту каждый шаг цикла
-«написать → проверить → запустить → понять, что не так»* — в токенах, во времени и в
-вероятности ошибки. Ниже — из чего складывается ответ и как этим пользоваться.
+VardUI was designed around one question: *what does each step of the "write → check → run →
+understand what went wrong" loop cost an agent* — in tokens, in time, and in the probability
+of a mistake. Below is what the answer is made of and how to use it.
 
-## Принципы
+## Principles
 
-| Принцип | Как реализован |
+| Principle | How it is implemented |
 |---|---|
-| Писать правильно с первого раза | маленький регулярный язык, синтаксис близкий к Swift/Kotlin/TS, одна форма на каждую вещь |
-| Исправлять без размышлений | каждая диагностика — `файл:строка`, строка кода, `fix:`; `vard check --fix` применяет исправления до неподвижной точки; таблицы «привычек» (`VStack → Column`, `onPress → onTap`, `"a" + n → "a{n}"`) |
-| Видеть без зрения | семантическое дерево ≈ 100 токенов; действия печатают диффы; `why` объясняет размеры; линты описывают рецепт |
-| Знание из одного источника | справочник вшит в бинарник и генерируется из реестра элементов — не расходится с компилятором |
-| Детерминизм | headless-рантайм, встроенный шрифт, симулятор платформы, MVS для версий: одинаковые входы — одинаковый результат |
-| Человек решает внешние и опасные шаги | одобрение возможностей пакетов, публикация — не через MCP |
+| Write it right the first time | a small regular language, syntax close to Swift/Kotlin/TS, one form for each thing |
+| Fix without thinking | every diagnostic is `file:line`, the line of code, `fix:`; `vard check --fix` applies fixes to a fixed point; "habit" tables (`VStack → Column`, `onPress → onTap`, `"a" + n → "a{n}"`) |
+| See without vision | a semantic tree ≈ 100 tokens; actions print diffs; `why` explains sizes; lints describe the recipe |
+| Knowledge from one source | the reference is compiled into the binary and generated from the element registry — it cannot drift from the compiler |
+| Determinism | headless runtime, bundled font, platform simulator, MVS for versions: same inputs, same result |
+| A person decides outward-facing and risky steps | approving package capabilities and publishing are not available through MCP |
 
-## Что получает агент в проекте
+## What an agent gets in a project
 
-`vard new` создаёт:
+`vard new` creates:
 
-- `AGENTS.md` (и `CLAUDE.md` → `@AGENTS.md`) — цикл работы, правила отладки, соглашения, и
-  блок `<!-- vard:packages -->`, который менеджер пакетов поддерживает в актуальном виде;
-- `.claude/skills/` — `vard-app` (паттерны экранов), `vard-debug`, `vard-native`,
-  `vard-design`, `vard-packages`; скиллы пакетов добавляются при установке как
-  `<пакет>-<скилл>`;
-- `.mcp.json` — MCP-сервер `vard mcp`.
+- `AGENTS.md` (and `CLAUDE.md` → `@AGENTS.md`) — the work loop, debugging rules,
+  conventions, and a `<!-- vard:packages -->` block that the package manager keeps current;
+- `.claude/skills/` — `vard-app` (screen patterns), `vard-debug`, `vard-native`,
+  `vard-design`, `vard-packages`; packages' skills are added on install as `<package>-<skill>`;
+- `.mcp.json` — the `vard mcp` server.
 
-## Бюджет токенов
+## Token budget
 
-| Операция | Стоимость |
+| Operation | Cost |
 |---|---|
-| полный справочник языка (`vard doc`) | ≈ 3k токенов, один раз за сессию |
-| экран целиком (`tree`) | ≈ 110 токенов (скриншот — 450–1600) |
-| результат действия | ≈ 30 токенов: только изменившиеся строки |
-| `vard check` | ~20 мс; исправимое исправляется без участия модели |
-| пакет: строка в `vard doc` / `vard doc NAME` | ≈ 30 / ≤ 1500 токенов |
-| обновление пакета | API-дифф + `--fix` вместо чтения changelog |
+| the full language reference (`vard doc`) | ≈ 3k tokens, once per session |
+| the whole screen (`tree`) | ≈ 110 tokens (a screenshot: 450–1600) |
+| the result of an action | ≈ 30 tokens: only the lines that changed |
+| `vard check` | ~20 ms; whatever is fixable is fixed without the model |
+| a package: one line in `vard doc` / `vard doc NAME` | ≈ 30 / ≤ 1500 tokens |
+| a package update | an API diff + `--fix` instead of reading a changelog |
 
-## Рекомендуемый цикл агента
+## Recommended agent loop
 
-1. Один раз за сессию — `vard doc` (или `vard_doc`).
-2. Правка `.vard` → `vard check --fix` → исправить остаток.
-3. `vard run --do "…"` — экран и действия; `why` для размеров, `state`/`log` для значений.
-4. Тест на каждую фичу и баг: `tests/*.vtest`, `vard test`.
-5. Нужна функциональность «как в библиотеке» — `vard search` → `vard info` → `vard add` →
-   `vard doc NAME`. Не угадывать имена; на `P008` — спросить пользователя.
-6. Скриншот — только чтобы оценить внешний вид.
+1. Once per session — `vard doc` (or `vard_doc`).
+2. Edit `.vard` → `vard check --fix` → fix the rest.
+3. `vard run --do "…"` — the screen and actions; `why` for sizes, `state`/`log` for values.
+4. A test for every feature and bug: `tests/*.vtest`, `vard test`.
+5. Need "library" functionality — `vard search` → `vard info` → `vard add` → `vard doc NAME`.
+   Never guess names; on `P008`, ask the user.
+6. A screenshot — only to judge how it looks.
 
-## Почему пакеты устроены именно так
+## Why packages are built this way
 
-Система пакетов продолжает те же принципы ([packages/README.md](packages/README.md)):
+The package system continues the same principles ([overview](packages/)):
 
-- **контракт вычисляет компилятор** — агенту не нужно верить описанию или читать код, чтобы
-  знать API и возможности пакета;
-- **установка не угадывает** — защищает от галлюцинированных имён;
-- **знание ограничено бюджетом** — AGENT.md ≤ 6 КБ, API генерируется;
-- **обновление механическое** — миграции пакетов превращаются в `fix:`;
-- **пакет запускается headless** — `[sim]` и тесты при публикации;
-- **риск остаётся у человека** — чувствительные возможности одобряются в `vard.toml`.
+- **the compiler computes the contract** — an agent does not need to trust a description or
+  read code to know a package's API and capabilities;
+- **installation never guesses** — protection against hallucinated names;
+- **knowledge has a budget** — AGENT.md ≤ 6 KB, the API is generated;
+- **updates are mechanical** — package migrations become `fix:`es;
+- **a package runs headless** — `[sim]` and tests at publish time;
+- **risk stays with a person** — sensitive capabilities are approved in `vard.toml`.
 
-## Работа над самим фреймворком
+## Working on the framework itself
 
-Правила для агентов, изменяющих VardUI, — в [CLAUDE.md](../CLAUDE.md): где единые источники
-правды (реестр элементов, std, explain-таблицы), что обновлять вместе (knowledge, скиллы,
-примеры), и как проверять (`cargo test --workspace`, `vard test` по примерам и пакетам).
+Rules for agents changing VardUI are in
+[CLAUDE.md](https://github.com/vardemin/vardui/blob/master/CLAUDE.md): where the single
+sources of truth are (element registry, std, explain tables), what must be updated together
+(knowledge, skills, examples), and how to verify (`cargo test --workspace`, `vard test` on
+the examples and packages).

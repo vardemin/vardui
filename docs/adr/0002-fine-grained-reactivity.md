@@ -1,15 +1,17 @@
-# ADR-0002: Fine-grained реактивность без virtual DOM
+# ADR-0002: Fine-grained reactivity without a virtual DOM
 
-**Статус:** принято
+**Status:** accepted
 
-**Контекст.** Производительность — ключевой критерий. Модель «перерендерить компонент и
-сравнить деревья» (React, Compose recomposition, SwiftUI body) тратит работу пропорционально
-размеру поддерева и требует от автора мемоизации — модели с этим систематически ошибаются.
+**Context.** Performance is a key criterion. The "re-render a component and diff the trees"
+model (React, Compose recomposition, SwiftUI body) spends work proportional to the size of
+the subtree and requires memoization from the author — something models systematically get
+wrong.
 
-**Решение.** Signals/computed/effects (как Solid/Leptos): тело вида выполняется один раз,
-каждый динамический prop — отдельный эффект, структурные `if`/`for` — эффекты над фрагментами,
-keyed-списки с сигналом значения на строку, отсечения по равенству на всех уровнях.
+**Decision.** Signals/computed/effects (like Solid/Leptos): a view body runs once, every
+dynamic prop is a separate effect, structural `if`/`for` are effects over fragments, keyed
+lists have a value signal per row, and equality cut-offs apply at every level.
 
-**Последствия.** + стоимость обновления пропорциональна изменению, а не размеру UI; автору не
-нужны `memo`/`key`-трюки (кроме `by` в списках, который проверяет компилятор). − состояние
-нельзя менять во время вычисления UI (R0003) — это осознанное ограничение, ловится рантаймом.
+**Consequences.** + the cost of an update is proportional to the change, not to the UI size;
+the author needs no `memo`/`key` tricks (except `by` in lists, which the compiler checks).
+− state cannot be changed while the UI is being computed (R0003) — a deliberate restriction
+caught by the runtime.

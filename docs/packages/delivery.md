@@ -1,22 +1,22 @@
-# Доставка на устройства
+# Delivery to devices
 
-Код Vard на устройстве исполняется рантаймом из исходников, поэтому «сборка приложения» с
-точки зрения Vard — это **бандл**: детерминированный набор файлов, который понимает любой хост.
+Vard code runs on a device in the runtime, from sources, so from Vard's point of view
+"building the app" means a **bundle**: a deterministic set of files any host understands.
 
 ## vard bundle
 
 ```bash
-vard bundle examples/firebase --out build/app          # каталог
-vard bundle examples/firebase --out app.vpk            # один архив
+vard bundle examples/firebase --out build/app          # a directory
+vard bundle examples/firebase --out app.vpk            # a single archive
 ```
 
 ```text
 build/app/
-  app.vard                  исходники приложения
-  @firebase/firebase.vard   исходники пакетов (путь @name/... = файл пакета для компоновщика)
-  vard.lock                 граф пакетов — компилятор на устройстве читает его сам
-  fonts/, assets/           ресурсы проекта
-  bundle.json               метаданные
+  app.vard                  the app's sources
+  @firebase/firebase.vard   package sources (the @name/... path marks a package file for the linker)
+  vard.lock                 the package graph — the compiler on the device reads it by itself
+  fonts/, assets/           project resources
+  bundle.json               metadata
 ```
 
 ```json
@@ -30,63 +30,66 @@ build/app/
 }
 ```
 
-- `sha256` — хеш содержимого бандла (тот же детерминированный формат `.vpk`).
-- `native_fingerprint` — хеш отсортированного списка всего, что должно существовать в
-  нативной части: имена `extern fn`, `extern event` и нативные модули пакетов.
-- `caps` — итоговые возможности приложения и его пакетов.
+- `sha256` — the hash of the bundle content (the same deterministic `.vpk` format).
+- `native_fingerprint` — the hash of the sorted list of everything that must exist in the
+  native part: `extern fn` and `extern event` names and the packages' native modules.
+- `caps` — the resulting capabilities of the app and its packages.
 
-Устройство не нуждается в менеджере пакетов: хост передаёт рантайму список `(путь, текст)`,
-а `vard_lang::compile` распознаёт файлы `@name/...` и `vard.lock` сам. FFI не изменился.
+The device needs no package manager: the host passes the runtime a list of `(path, text)`,
+and `vard_lang::compile` recognizes `@name/...` files and `vard.lock` by itself. The FFI did
+not change.
 
 ## Android
 
-Сборка `platforms/android` делает всё сама:
+The `platforms/android` build does everything itself:
 
-1. `settings.gradle.kts` вызывает `vard android-modules <vard.app>` — список пакетов с
-   `[native.android]` — и включает каждую библиотеку как `:vard-<name>`; `:app` зависит от них;
-2. задача `bundleVardApp` вызывает `vard bundle <vard.app> --out build/generated/vardAssets/app`;
-3. `VardActivity` читает из ассетов `*.vard` и `vard.lock`, модули регистрируются через
-   мета-данные `dev.vard.module.*` в манифестах библиотек.
+1. `settings.gradle.kts` runs `vard android-modules <vard.app>` — the list of packages with
+   `[native.android]` — and includes each library as `:vard-<name>`; `:app` depends on them;
+2. the `bundleVardApp` task runs `vard bundle <vard.app> --out build/generated/vardAssets/app`;
+3. `VardActivity` reads `*.vard` and `vard.lock` from the assets; modules register through
+   `dev.vard.module.*` meta-data in the libraries' manifests.
 
 ```bash
 cd platforms/android
 ./gradlew installDebug -Pvard.app=examples/firebase
 ```
 
-Флаг `-Pvard.firebase=true` больше не нужен: зависимость от пакета `firebase` подключает его
-нативный модуль.
+The `-Pvard.firebase=true` flag is gone: depending on the `firebase` package includes its
+native module.
 
-## Обновления по воздуху (OTA)
+## Over-the-air updates (OTA)
 
-Интерпретируемый бандл можно заменить без пересборки и переустановки приложения — при одном
-условии: **нативная часть не изменилась**. Это и проверяет нативный отпечаток.
+An interpreted bundle can be replaced without rebuilding and reinstalling the app — on one
+condition: **the native part has not changed**. That is exactly what the native fingerprint
+checks.
 
-| Изменение | Отпечаток | Можно доставить OTA |
+| Change | Fingerprint | Deliverable OTA |
 |---|---|---|
-| вёрстка, логика, стили, тексты | тот же | да |
-| новая версия пакета без нативного кода | тот же | да |
-| новый `extern fn` / `extern event` или новый нативный модуль | другой | нет — нужен новый релиз приложения |
+| layout, logic, styles, texts | same | yes |
+| a new version of a package without native code | same | yes |
+| a new `extern fn` / `extern event` or a new native module | different | no — needs a new app release |
 
-Схема (формат и проверка совместимости реализованы, клиент обновлений в хостах — дорожная карта):
+The scheme (the format and the compatibility check are implemented; the update client in the
+hosts is on the roadmap):
 
 ```text
 CI:      vard check && vard test && vard bundle --out app-<sha>.vpk
-         → публикация в канал (статический хостинг, тот же принцип, что у реестра):
+         → publish to a channel (static hosting, the same principle as a registry):
            channels/<app>/<native_fingerprint>/latest.json  {sha256, url, signature}
-Device:  при старте/в фоне: GET latest.json для СВОЕГО отпечатка
-         → проверить подпись и sha256 → сохранить → применить при следующем запуске
-         → если новый бандл падает при компиляции/монтировании — откат к встроенному
+Device:  at start/in background: GET latest.json for ITS OWN fingerprint
+         → verify the signature and sha256 → store → apply on next launch
+         → if the new bundle fails to compile/mount — roll back to the built-in one
 ```
 
-Канал адресуется отпечатком, поэтому устройство физически не может получить бандл,
-требующий нативного кода, которого в нём нет. Для AI-first разработки это замыкает цикл:
-агент исправил ошибку → тесты прошли headless → бандл с тем же отпечатком безопасно уходит
-пользователям; изменение, требующее нового нативного кода, автоматически превращается в
-релиз магазина.
+The channel is addressed by the fingerprint, so a device physically cannot receive a bundle
+that needs native code it does not have. For AI-first development this closes the loop: an
+agent fixed a bug → the tests passed headless → a bundle with the same fingerprint safely
+goes to users; a change that needs new native code automatically becomes a store release.
 
-## Воспроизводимость
+## Reproducibility
 
-- Один и тот же `vard.toml` даёт тот же выбор версий (MVS), `vard.lock` закрепляет хеши.
-- Архивы `.vpk` детерминированы: отсортированные пути, без временных меток и прав доступа.
-- `vard bundle` на любой машине даёт тот же `sha256` для тех же входов.
-- Офлайн: пакеты из кэша (`~/.vard/cache/`), `builtin` и path-зависимости не требуют сети.
+- The same `vard.toml` gives the same version selection (MVS); `vard.lock` pins the hashes.
+- `.vpk` archives are deterministic: sorted paths, no timestamps, no permissions.
+- `vard bundle` gives the same `sha256` for the same inputs on any machine.
+- Offline: packages from the cache (`~/.vard/cache/`), `builtin` and path dependencies need
+  no network.

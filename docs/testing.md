@@ -1,72 +1,73 @@
-# Тестирование и отладка
+# Testing and debugging
 
-Обоснование — [ADR-0003](adr/0003-text-first-inspection.md): экран текстом стоит ~100 токенов
-против 450–1600 у скриншота и, в отличие от картинки, содержит точные размеры и причины.
+Rationale: [ADR-0003](adr/0003-text-first-inspection.md) — a screen as text costs ~100 tokens
+versus 450–1600 for a screenshot and, unlike an image, carries exact sizes and their causes.
 
-## Headless-запуск
+## Headless runs
 
 ```bash
 vard run [PATH] --do "ACTIONS" [--view NAME] [--size 390x844] [--dark]
 vard run --script steps.txt
 ```
 
-Каждый запуск монтирует приложение заново и проигрывает действия — детерминированно, за
-50–100 мс, без эмулятора. «Сессия» — это список действий: чтобы продолжить, повторите его
-целиком с новым шагом в конце.
+Every run mounts the app from scratch and replays the actions — deterministic, 50–100 ms,
+no emulator. A "session" is a list of actions: to continue, replay the whole list with the
+new step at the end.
 
-## Язык действий
+## The action language
 
-Одно действие на строку или через `;`. Полный список — `vard doc actions`.
+One action per line or separated by `;`. The full list: `vard doc actions`.
 
-| Действие | Что делает |
+| Action | What it does |
 |---|---|
-| `tree` | семантическое дерево с `@id` (по умолчанию) |
-| `layout` | все узлы с `[x,y WxH]`, стилем и `file:line` |
-| `tap SEL` · `type SEL "text"` · `submit SEL` · `focus SEL` · `scroll SEL DY` | взаимодействие |
-| `why SEL` | почему у элемента такой размер и позиция — по цепочке родителей |
-| `find SEL` · `state` · `log` · `stats` · `lint` | инспекция |
-| `expect SEL` · `expect "text"` · `expect no "text"` | утверждения |
-| `expect SEL checked\|unchecked\|enabled\|disabled\|offscreen\|visible` | состояние элемента |
-| `theme light\|dark` · `size W H` · `insets T B [L R]` · `keyboard H` | окружение |
-| `shot FILE.png [scale]` | скриншот (только для оценки визуального дизайна) |
+| `tree` | the semantic tree with `@id`s (the default) |
+| `layout` | every node with `[x,y WxH]`, style and `file:line` |
+| `tap SEL` · `type SEL "text"` · `submit SEL` · `focus SEL` · `scroll SEL DY` | interaction |
+| `why SEL` | why the element has this size and position — up the parent chain |
+| `find SEL` · `state` · `log` · `stats` · `lint` | inspection |
+| `expect SEL` · `expect "text"` · `expect no "text"` | assertions |
+| `expect SEL checked\|unchecked\|enabled\|disabled\|offscreen\|visible` | element state |
+| `theme light\|dark` · `size W H` · `insets T B [L R]` · `keyboard H` | environment |
+| `shot FILE.png [scale]` | a screenshot (only to judge visual design) |
 
-Селекторы: `@12` (id из `tree`), `#email` (prop `id:`), `"Sign in"` (точная метка, затем слово
-целиком, затем подстрока). Мутирующие действия печатают дифф дерева: `+` добавлено,
-`-` удалено, `~` изменено.
+Selectors: `@12` (id from `tree`), `#email` (the `id:` prop), `"Sign in"` (exact label, then
+whole word, then substring). Mutating actions print a diff of the tree: `+` added,
+`-` removed, `~` changed.
 
-## Симулятор платформы
+## The platform simulator
 
-Headless-платформа `Sim` воспроизводит всё из [platform.md](platform.md):
+The headless platform `Sim` reproduces everything in [Platform](platform.md):
 
 ```text
-permission notifications answer denied      # что ответит диалог (по умолчанию granted)
-permission camera granted                   # текущий статус
+permission notifications answer denied      # what the dialog will answer (default granted)
+permission camera granted                   # the current status
 push received "Title" "Body" {"screen":"inbox"}
 push opened "Title" "Body"
-emit deepLink "vard://item/7"               # любое extern event, аргументы — JSON
+emit deepLink "vard://item/7"               # any extern event, arguments as JSON
 back            back 0.5            back cancel
 insets 47 34    keyboard 300        focus #email
-restart                                     # холодный старт; prefs/secure/разрешения сохраняются
-storage                                     # дамп prefs, secure, разрешений, уведомлений
+restart                                     # cold start; prefs/secure/permissions kept
+storage                                     # dump prefs, secure values, permissions, notifications
 ```
 
-Свои `extern fn`:
+Your own `extern fn`s:
 
 ```text
-mock NAME VALUE         # функция возвращает VALUE, её колбэки получают VALUE
-pending                 # какие вызовы ждут ответа
-resolve NAME VALUE      # завершить самый старый ожидающий вызов (состояния загрузки!)
-send NAME VALUE         # доставить значение слушателю и оставить его ожидающим
+mock NAME VALUE         # the function returns VALUE, its callbacks receive VALUE
+pending                 # which calls are waiting for a result
+resolve NAME VALUE      # complete the oldest pending call (loading states!)
+send NAME VALUE         # deliver a value to a listener and keep it pending
 ```
 
-Колбэк с двумя параметрами получает JSON-массив: `resolve firestoreListNotes [[{"title":"A"}], null]`.
-Пакеты задают ответы по умолчанию в `[sim]` своего манифеста (например, `authCurrentUser`
-отвечает `nil`); `mock` в тесте их переопределяет.
+A callback with two parameters receives a JSON array:
+`resolve firestoreListNotes [[{"title":"A"}], null]`. Packages set default answers in the
+`[sim]` section of their manifest (for example, `authCurrentUser` answers `nil`); `mock` in a
+test overrides them.
 
-## Файлы .vtest
+## .vtest files
 
 ```text
-@view LoginScreen       # необязательные заголовки
+@view LoginScreen       # optional headers
 @size 390x844
 @dark
 @app ../other-project
@@ -75,9 +76,10 @@ tap "Sign in"
 expect "Welcome"
 ```
 
-`vard test [PATH]` находит все `*.vtest`. Тест исполняется против ближайшего каталога с
-`vard.toml` (так тесты в `example/` пакета проверяют пример), иначе — против указанного проекта.
-При падении печатается только упавший шаг (и экран в этот момент):
+`vard test [PATH]` finds every `*.vtest`. A test runs against the nearest directory with a
+`vard.toml` (that is how tests in a package's `example/` exercise the example), otherwise
+against the given project. On failure only the failing step is printed (plus the screen at
+that moment):
 
 ```text
 PASS tests/smoke.vtest (52ms)
@@ -91,11 +93,11 @@ FAIL tests/x.vtest
 1 passed, 1 failed
 ```
 
-## Порядок отладки
+## Debugging order
 
-1. `vard check` → ошибки с исправлениями (`--fix` применяет их до неподвижной точки).
-2. `vard run --do tree` → экран текстом.
-3. Действия печатают только изменения.
-4. `why`/`layout` дают числа и правило, создавшее размер.
-5. `lint:`-строки и `! Rxxxx` — реальные ошибки, исправлять первыми.
-6. Скриншот — только чтобы оценить внешний вид.
+1. `vard check` → errors with fixes (`--fix` applies them to a fixed point).
+2. `vard run --do tree` → the screen as text.
+3. Actions print only the changes.
+4. `why`/`layout` give the numbers and the rule that produced a size.
+5. `lint:` lines and `! Rxxxx` are real bugs — fix them first.
+6. A screenshot — only to judge how it looks.

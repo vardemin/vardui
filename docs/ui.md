@@ -1,40 +1,40 @@
-# Интерфейс: элементы, раскладка, стиль
+# UI: elements, layout, style
 
-Единица измерения — dp. Описание каждого элемента с типами props: `vard doc Column`,
-`vard doc Text`, общие props — `vard doc common`; всё генерируется из единого реестра
-(`crates/vard-lang/src/registry.rs`), поэтому документация не расходится с компилятором.
+The unit is dp. Every element with its prop types: `vard doc Column`, `vard doc Text`; common
+props: `vard doc common`. All of it is generated from one registry
+(`crates/vard-lang/src/registry.rs`), so the docs cannot drift from the compiler.
 
-## Встроенные элементы
+## Built-in elements
 
-| Элемент | Props | Смысл |
+| Element | Props | Meaning |
 |---|---|---|
-| `Column` / `Row` | `gap align justify` (+ `wrap` у Row) | flex-контейнеры; `Row(wrap: true)` переносит детей на новые строки |
-| `Grid` | `columns gap align` | равные колонки, заполнение по строкам |
-| `Stack` | `align justify` | дети накладываются; z-порядок = порядок в коде; ребёнок с `grow` заполняет высоту |
-| `Scroll` | `gap align` | вертикально прокручиваемая колонка; нужна ограниченная высота (`grow: 1`) |
-| `Text(text)` | `style size weight color textAlign maxLines strike underline italic font letterSpacing lineHeight` | текст |
-| `Input` | `value` (bind String) `placeholder onSubmit onChange secure keyboard size weight font color placeholderColor` | поле ввода; на устройстве — нативный редактор поверх кадра |
-| `Image(src)` | `fit tint` | файл проекта (`"assets/logo.png"`) или https-URL |
-| `Spacer` | | гибкое пустое место (`grow: 1` по умолчанию) |
+| `Column` / `Row` | `gap align justify` (+ `wrap` on Row) | flex containers; `Row(wrap: true)` flows children onto new lines |
+| `Grid` | `columns gap align` | equal columns, filled row by row |
+| `Stack` | `align justify` | children overlap; z-order = source order; a `grow` child fills the height |
+| `Scroll` | `gap align` | a vertically scrolling column; needs a bounded height (`grow: 1`) |
+| `Text(text)` | `style size weight color textAlign maxLines strike underline italic font letterSpacing lineHeight` | text |
+| `Input` | `value` (bind String) `placeholder onSubmit onChange secure keyboard size weight font color placeholderColor` | text field; on devices a native editor over the frame |
+| `Image(src)` | `fit tint` | a project file (`"assets/logo.png"`) or an https URL |
+| `Spacer` | | flexible empty space (`grow: 1` by default) |
 
-Стандартные виды (написаны на самом Vard, исходник — `vard doc std`):
+Std views (written in Vard itself, source: `vard doc std`):
 `Button(label, onTap, kind: .filled|.tonal|.outline|.text, enabled)`,
 `Checkbox(bind value, label)`, `Switch(bind value, label)`, `Card { }`, `Divider()`.
-Дизайн-система — это обычные виды: скопируйте паттерн std (токены + параметр `kind`).
+A design system is plain views: copy std's pattern (tokens + a `kind` parameter).
 
-## Раскладка
+## Layout
 
-Модель — семантика CSS flex за один проход: ограничения вниз, размеры вверх.
+The model is CSS flex semantics in a single pass: constraints go down, sizes go up.
 
-- `align` — поперечная ось: `.start .center .end .stretch` (по умолчанию `.stretch`).
-- `justify` — главная ось: `.start` (по умолчанию) `.center .end .between .around .evenly`.
-- `grow` — доля свободного места по главной оси; `alignSelf` — переопределить `align` для ребёнка.
-- Размеры: `width height minWidth minHeight maxWidth maxHeight aspectRatio`.
-- Отступы: `padding paddingX paddingY paddingTop paddingBottom paddingLeft paddingRight`;
-  `safeArea: .top|.bottom|.all|.vertical|.horizontal` добавляет системные отступы к padding.
+- `align` — the cross axis: `.start .center .end .stretch` (default `.stretch`).
+- `justify` — the main axis: `.start` (default) `.center .end .between .around .evenly`.
+- `grow` — a share of the free space on the main axis; `alignSelf` overrides `align` for a child.
+- Sizes: `width height minWidth minHeight maxWidth maxHeight aspectRatio`.
+- Spacing: `padding paddingX paddingY paddingTop paddingBottom paddingLeft paddingRight`;
+  `safeArea: .top|.bottom|.all|.vertical|.horizontal` adds the system insets to padding.
 
-Каждый узел помнит, **почему** получил свой размер по каждой оси. `vard run --do 'why #card'`
-печатает цепочку правил до корня — это главный инструмент для «почему не помещается».
+Every node remembers **why** it got its size on each axis. `vard run --do 'why @2'` prints
+the chain of rules up to the root — the main tool for "why doesn't it fit":
 
 ```text
 > why @2
@@ -46,55 +46,56 @@ in App @1 390x844 at 0,0  examples/todo/app.vard:26
     height: grow: 1 share of parent's free space
 ```
 
-## Общие props
+## Common props
 
-Все элементы принимают: размеры и `grow`, отступы, `background`, `gradient` (`[Color]`) и
-`gradientAngle` (градусы CSS, 180 = вниз), `radius` и радиусы по углам
-(`radiusTopLeft`...), `border` и границы по сторонам, `borderColor`, `shadow`
+Every element accepts: sizes and `grow`, padding, `background`, `gradient` (`[Color]`) and
+`gradientAngle` (CSS degrees, 180 = down), `radius` and per-corner radii
+(`radiusTopLeft`...), `border` and per-side borders, `borderColor`, `shadow`
 (`.sm .md .lg .xl .xxl`), `shadowColor`, `opacity`, `offsetX/offsetY`, `scale`, `clip`,
-`alignSelf`, `onTap`, `id`, а также семантику: `role` (`.button .checkbox .switch .heading
+`alignSelf`, `onTap`, `id`, and semantics: `role` (`.button .checkbox .switch .heading
 .link .image`), `label`, `checked`, `enabled`.
 
-`id: "email"` даёт стабильный адрес `#email` для тестов и инспекции. Неуникальный `id` на
-экране — линт `L006`.
+`id: "email"` gives a stable address `#email` for tests and inspection. A non-unique `id` on
+screen is lint `L006`.
 
-## Типографика
+## Typography
 
-`style`: `.display` 34, `.title` 24, `.heading` 18, `.body` 16 (по умолчанию), `.label` 15 bold,
-`.caption` 13. `weight`: `.thin` … `.black` (100–900). Шрифты проекта кладутся в `fonts/`
-(`Inter-SemiBold.ttf` → семейство `Inter`, вес 600); выбор — `font: "Inter"` у элемента или в теме.
-Headless-раскладка использует встроенный шрифт DejaVu, поэтому одинакова на любой машине; на
-устройстве текст меряет платформенный шейпер, и переносы совпадают с тем, что посчитал layout.
+`style`: `.display` 34, `.title` 24, `.heading` 18, `.body` 16 (default), `.label` 15 bold,
+`.caption` 13. `weight`: `.thin` … `.black` (100–900). Project fonts go into `fonts/`
+(`Inter-SemiBold.ttf` → family `Inter`, weight 600); select with `font: "Inter"` on an
+element or in the theme. Headless layout uses the bundled DejaVu font, so it is identical on
+every machine; on devices the platform shaper measures text, and line breaks match what the
+layout computed.
 
-## Токены и темы
+## Tokens and themes
 
 ```
 theme { brand: #7C3AED, primary: #7C3AED, onPrimary: #FFFFFF }
 theme dark { brand: #C4B5FD, primary: #A78BFA, onPrimary: #1E1B4B }
 ```
 
-- Семантические токены: `.background .surface .text .muted .primary .onPrimary .border
-  .danger .success .warning .clear`. Сочетания: `.text`/`.muted` на `.background`/`.surface`,
-  `.onPrimary` на `.primary`. Нарушение контраста WCAG AA — линт `L005`.
-- Свои токены объявляются в теме и используются как `.brand`.
-- Сырые hex-цвета в видах ломают тёмный режим — используйте токены.
-- Тёмная тема: системная, либо `setColorScheme(.dark|.light|.system)`; читать — глобал `isDark`;
-  в тестах — `theme dark` или `@dark`.
+- Semantic tokens: `.background .surface .text .muted .primary .onPrimary .border
+  .danger .success .warning .clear`. Pairings: `.text`/`.muted` on `.background`/`.surface`,
+  `.onPrimary` on `.primary`. Contrast below WCAG AA is lint `L005`.
+- Custom tokens are declared in a theme and used as `.brand`.
+- Raw hex colors in views break dark mode — use tokens.
+- Dark theme: the system's, or `setColorScheme(.dark|.light|.system)`; read it with the
+  global `isDark`; in tests — `theme dark` or `@dark`.
 
-«Сделай как Tailwind / Material / iOS»: `vard doc design` — таблицы соответствия классов и
-props; готовый пакет `tailwind` (`vard add tailwind`) — полная палитра, семантические токены с
-тёмными значениями и компоненты `TwButton TwCard Badge Avatar Field`.
+"Make it like Tailwind / Material / iOS": `vard doc design` has class → prop mapping tables;
+the `tailwind` package (`vard add tailwind`) ships the full palette, semantic tokens with
+dark values and the components `TwButton TwCard Badge Avatar Field`.
 
-## Линты интерфейса
+## UI lints
 
-`vard run` после сценария печатает линты — это реальные ошибки, а не стиль:
+After a script, `vard run` prints lints — real bugs, not style:
 
-| Код | Что |
+| Code | What |
 |---|---|
-| `L001` | дети выходят за контейнер (нужен `Scroll` или `grow: 1` у гибкого ребёнка) |
-| `L002` | интерактивный элемент меньше 44×44 dp |
-| `L004` | контейнер с детьми имеет нулевую ширину/высоту |
-| `L005` | контраст текста ниже WCAG AA |
-| `L006` | повторяющийся `id` на экране |
+| `L001` | children overflow their container (needs a `Scroll`, or `grow: 1` on the flexible child) |
+| `L002` | an interactive element smaller than 44×44 dp |
+| `L004` | a container with children has zero width or height |
+| `L005` | text contrast below WCAG AA |
+| `L006` | a repeated `id` on screen |
 
-Рецепт исправления — `vard explain L001`.
+The fix recipe: `vard explain L001`.

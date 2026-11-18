@@ -1,14 +1,15 @@
-# ADR-0003: Текстовая инспекция как основной интерфейс отладки
+# ADR-0003: Text inspection as the primary debugging interface
 
-**Статус:** принято
+**Status:** accepted
 
-**Контекст.** Скриншот экрана стоит модели ~450–1600 токенов и требует «зрения», чтобы понять,
-что где. При этом точные размеры и причины раскладки из картинки не извлечь.
+**Context.** A screenshot costs a model ~450–1600 tokens and requires "vision" to understand
+what is where. And exact sizes and the causes of a layout cannot be extracted from a picture.
 
-**Решение.** Детерминированный headless-рантайм и язык действий (`tree`, `tap`, `type`, `why`,
-`state`, `lint`, `expect`). Мутирующие действия печатают дифф семантического дерева. Тесты
-(`.vtest`) и MCP используют тот же язык. Встроенный шрифт делает layout одинаковым на любой машине.
+**Decision.** A deterministic headless runtime and an action language (`tree`, `tap`,
+`type`, `why`, `state`, `lint`, `expect`). Mutating actions print a diff of the semantic
+tree. Tests (`.vtest`) and MCP use the same language. A bundled font makes layout identical
+on every machine.
 
-**Последствия.** + экран ≈ 100 токенов, действие ≈ 30; воспроизводимые баги и тесты без
-эмулятора. − headless-рендер не равен платформенному пиксель в пиксель; финальная визуальная
-проверка — на устройстве (план: тот же протокол поверх WebSocket к устройству).
+**Consequences.** + a screen ≈ 100 tokens, an action ≈ 30; reproducible bugs and tests
+without an emulator. − the headless render is not pixel-identical to the platform; the final
+visual check happens on a device (plan: the same protocol over a WebSocket to the device).

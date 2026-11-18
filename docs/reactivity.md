@@ -1,55 +1,55 @@
-# Реактивность и модель исполнения
+# Reactivity and execution model
 
-Решение и альтернативы — [ADR-0002](adr/0002-fine-grained-reactivity.md). Здесь — как это
-работает и какие правила из этого следуют для кода.
+The decision and its alternatives: [ADR-0002](adr/0002-fine-grained-reactivity.md). This
+page explains how it works and what rules follow for code.
 
-## Граф
+## The graph
 
-| В коде | В рантайме |
+| In code | In the runtime |
 |---|---|
-| `state x`, `pref x` | Signal — ячейка со списком подписчиков |
-| `let y = ...`, параметры вида | Computed — ленивое значение с кэшем; зависимости собираются при чтении |
-| каждый динамический prop | Effect — пишет одно поле одного узла |
-| `if` / `for` в дереве | структурный Effect над фрагментом дерева |
-| вид | Scope — владеет всем, что создано внутри |
+| `state x`, `pref x` | Signal — a cell with a list of subscribers |
+| `let y = ...`, view parameters | Computed — a lazy cached value; dependencies are collected on read |
+| every dynamic prop | Effect — writes one field of one node |
+| `if` / `for` in the tree | a structural Effect over a fragment of the tree |
+| a view | Scope — owns everything created inside it |
 
-Тело вида выполняется **один раз** при монтировании. Дальше изменение `state` будит только
-те эффекты, которые его прочитали: `count += 1` перепишет текст одного `Text`, ничего не
-перестраивая. Нет virtual DOM, нет перерисовки компонентов, нет мемоизации вручную.
+A view body runs **once**, at mount. After that, changing a `state` wakes exactly the
+effects that read it: `count += 1` rewrites the text of one `Text` and rebuilds nothing.
+No virtual DOM, no component re-rendering, no manual memoization.
 
-## Отсечения по равенству
+## Equality cut-offs
 
-На каждом уровне: сигнал не уведомляет при том же значении; prop не трогает узел при том же
-значении; неизменившиеся props не помечают layout грязным. Статические props (литералы,
-enum, лямбды) вообще не создают эффектов.
+At every level: a signal does not notify for the same value; a prop does not touch the node
+for the same value; unchanged props do not mark layout dirty. Static props (literals, enum
+values, lambdas) create no effects at all.
 
-## Списки
+## Lists
 
-`for t in todos by t.id` реконсилирует строки по ключу. У каждой строки свой сигнал значения,
-поэтому изменение одного элемента списка из 3000 перезапускает эффекты одной строки (замер в
-репозитории: 7 действий над 3000 строками — 35 запусков эффектов). Без `by` строки
-сопоставляются по позиции: перестановка превращается в изменения всех строк.
+`for t in todos by t.id` reconciles rows by key. Each row has its own value signal, so
+changing one item of a 3000-item list re-runs the effects of one row (measured in the
+repository: 7 actions over 3000 rows — 35 effect runs). Without `by`, rows are matched by
+position: a reorder turns into changes in every row.
 
-## Порядок и согласованность
+## Order and consistency
 
-Эффекты выполняются в порядке создания (родитель раньше ребёнка), поэтому промежуточных
-несогласованных состояний («glitches») нет. Удаление скоупа (вид ушёл с экрана, ветка `if`
-сменилась) освобождает все его эффекты, узлы, сигналы и обработчики событий.
+Effects run in creation order (parent before child), so there are no intermediate
+inconsistent states ("glitches"). Disposing a scope (a view left the screen, an `if` branch
+switched) frees all of its effects, nodes, signals and event handlers.
 
-## Правила для кода
+## Rules for code
 
-1. **Рендер чистый.** Нельзя писать в state во время вычисления prop, `let` или условия
-   `if`/`for` — это `R0003`. Запись — в обработчиках (`onTap`, `onChange`, `onSubmit`,
-   `on event`) и функциях, вызванных из них.
-2. **`let` не читает сам себя** (`R0004`) — ни напрямую, ни через другие `let`.
-3. **Значения копируются.** `let t = todos[0]; t.title = "x"` не изменит список; меняйте
-   место: `todos[0].title = "x"`.
-4. **Ключи уникальны.** `R0002` — два одинаковых `by`.
+1. **Rendering is pure.** Writing state while computing a prop, a `let` or an `if`/`for`
+   condition is `R0003`. Writes go into handlers (`onTap`, `onChange`, `onSubmit`,
+   `on event`) and functions called from them.
+2. **A `let` does not read itself** (`R0004`), directly or through other `let`s.
+3. **Values are copied.** `let t = todos[0]; t.title = "x"` does not change the list; change
+   the place: `todos[0].title = "x"`.
+4. **Keys are unique.** `R0002` — two equal `by` keys.
 
-Ошибки рантайма не роняют приложение: проблема превращается в `R`-диагностику с `file:line`,
-значение — в `nil`.
+Runtime errors do not crash the app: the problem becomes an `R` diagnostic with
+`file:line`, the value becomes `nil`.
 
-## Измерение
+## Measuring
 
-`vard run --do 'tap "Add"; stats'` печатает число запусков эффектов, раскладок и узлов —
-этого достаточно, чтобы увидеть лишнюю работу без профилировщика.
+`vard run --do 'tap "Add"; stats'` prints effect runs, layouts and node count — enough to see
+wasted work without a profiler.

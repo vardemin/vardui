@@ -1,16 +1,16 @@
-# ADR-0001: Собственный язык Vard вместо DSL на Kotlin/Swift/TS
+# ADR-0001: Our own Vard language instead of a DSL in Kotlin/Swift/TS
 
-**Статус:** принято
+**Status:** accepted
 
-**Контекст.** Приложения пишет LLM. Ей нужны: короткий справочник, однозначные правила,
-мгновенная проверка и исправления, понятные ошибки. Существующие языки дают огромную
-поверхность (генерики, наследование, async-модели, тулчейны по 1–5 минут на сборку) и
-ошибки компилятора, рассчитанные на человека.
+**Context.** Applications are written by an LLM. It needs a short reference, unambiguous
+rules, instant checking with fixes, and clear errors. Existing languages offer a huge
+surface (generics, inheritance, async models, 1–5 minute toolchain builds) and compiler
+errors designed for people.
 
-**Решение.** Небольшой статически типизированный язык с синтаксисом, близким к Swift/Kotlin/TS
-(сильные priors у моделей), одной формой записи на каждую вещь и компилятором, который знает
-типичные «привычки» моделей из других фреймворков и превращает их в машинные исправления.
+**Decision.** A small statically typed language with syntax close to Swift/Kotlin/TS (strong
+priors in models), one way to write each thing, and a compiler that knows models' typical
+"habits" from other frameworks and turns them into machine fixes.
 
-**Последствия.** + полный справочник ≈ 2k токенов; проверка ≈ 20 мс; ошибки исправляются
-автоматически. − нужно поддерживать собственный компилятор и тулинг; интероп с платформой
-только через `extern fn` (см. дорожную карту).
+**Consequences.** + the full reference ≈ 3k tokens; a check ≈ 20 ms; errors fix themselves.
+− we maintain our own compiler and tooling; platform interop only through `extern fn` (see
+the roadmap).

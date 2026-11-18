@@ -1,189 +1,191 @@
-# Язык Vard
+# The Vard language
 
-Vard — декларативный статически типизированный язык описания интерфейсов. Синтаксис близок к
-Swift/Kotlin/TypeScript (у моделей сильные priors), но на каждую вещь — **одна форма записи**:
-никаких цепочек модификаторов, аннотаций-декораторов и альтернативных синтаксисов. Полный
-справочник для агентов — `vard doc` (≈ 3k токенов); этот документ — то же самое подробно и с
-обоснованиями.
+Vard is a declarative, statically typed language for user interfaces. Its syntax is close
+to Swift/Kotlin/TypeScript (where models have strong priors), but there is **one way to
+write each thing**: no modifier chains, no decorator annotations, no alternative syntaxes.
+The full reference for agents is `vard doc` (≈ 3k tokens); this page says the same in more
+detail, with the reasons.
 
-## Файлы и проект
+## Files and projects
 
-- Исходники — `*.vard`. Все файлы каталога проекта (рекурсивно, кроме скрытых каталогов,
-  `target`, `build`, `node_modules`) образуют **одно пространство имён**: импортов нет.
-- Корневой вид приложения — `view App`. Если его нет, `vard run` монтирует последний вид,
-  объявленный в коде проекта.
-- Зависимости объявляются в `vard.toml`, их публичные имена видны без импортов (правила —
-  в [packages/using.md](packages/using.md#пространства-имён)).
-- Инструкции разделяются переводом строки; `;` — ошибка `E0106` с автоисправлением.
-  Перенос внутри `(`/`[` и строки-продолжения (начинающиеся с `.x`, `&&`, `||`, `?`, `:`)
-  допускаются.
+- Sources are `*.vard`. All files of the project directory (recursively, except hidden
+  directories, `target`, `build`, `node_modules`) form **one namespace**: there are no imports.
+- The app's root view is `view App`. Without it, `vard run` mounts the last view declared in
+  the project's code.
+- Dependencies are declared in `vard.toml`; their public names are visible without imports
+  (rules: [Using packages](packages/using.md#namespaces)).
+- Statements end at the line break; `;` is error `E0106` with an auto-fix. Line breaks are
+  allowed inside `(`/`[` and before continuation lines (starting with `.x`, `&&`, `||`, `?`, `:`).
 
-## Объявления верхнего уровня
+## Top-level declarations
 
 ```
-struct Todo { id: Int, title: String, done: Bool = false }   // поля `имя: Тип [= умолчание]`
-enum Filter { all, active, done }                            // значения: .all .active .done
+struct Todo { id: Int, title: String, done: Bool = false }   // fields `name: Type [= default]`
+enum Filter { all, active, done }                            // values: .all .active .done
 const maxItems = 50
-fn total(xs: [Int]) -> Int { return xs.sum() }               // без `-> T` функция ничего не возвращает
-extern fn share(text: String) -> Bool                        // вызов платформы
-extern fn load(id: Int, done: fn(Item?, String?))            // асинхронный вызов: колбэк
-extern event orderUpdated(order: Order)                      // событие платформы
-theme { brand: #7C3AED, primary: #7C3AED, font: "Inter" }   // цветовые токены и шрифт по умолчанию
-theme dark { brand: #C4B5FD }                                // значения для тёмной темы
+fn total(xs: [Int]) -> Int { return xs.sum() }               // no `-> T` = returns nothing
+extern fn share(text: String) -> Bool                        // a platform call
+extern fn load(id: Int, done: fn(Item?, String?))            // an async call: callback
+extern event orderUpdated(order: Order)                      // a platform event
+theme { brand: #7C3AED, primary: #7C3AED, font: "Inter" }   // color tokens and the default font
+theme dark { brand: #C4B5FD }                                // dark-mode values
 view Name(params) { members }
 ```
 
-Порядок объявлений не важен: типы и функции могут ссылаться друг на друга в любом порядке.
-Ключевые слова других языков (`func`, `function`, `component`, `class`, `interface`...)
-компилятор распознаёт и исправляет на Vard-эквивалент (`E0110`, с `fix:`).
+Declaration order does not matter: types and functions can refer to each other in any
+order. Keywords from other languages (`func`, `function`, `component`, `class`,
+`interface`...) are recognized and fixed to the Vard equivalent (`E0110`, with `fix:`).
 
-## Типы
+## Types
 
-| Тип | Пример | Замечания |
+| Type | Example | Notes |
 |---|---|---|
-| `Int` | `42` | целое 64-бит; `Int / Int` усекает |
-| `Float` | `3.5` | `Int` неявно приводится к `Float`, обратно — `toInt()` |
-| `String` | `"Count: {n}"` | интерполяция `{expr}`; экранирование `\n \t \" \\ \{ \}` |
+| `Int` | `42` | 64-bit integer; `Int / Int` truncates |
+| `Float` | `3.5` | `Int` converts to `Float` implicitly; back with `toInt()` |
+| `String` | `"Count: {n}"` | interpolation `{expr}`; escapes `\n \t \" \\ \{ \}` |
 | `Bool` | `true` | |
-| `Color` | `#RGB #RRGGBB #RRGGBBAA` | или токен `.primary` |
-| `[T]` | `[1, 2]` | список |
-| `[String: T]` | `["a": 1]`, `[:]` | словарь; ключи — всегда `String` (`E0125`) |
-| `T?` | `nil` | опциональное значение |
-| `fn(A, B) -> R` | `x => x * 2` | функция |
-| `struct`/`enum` | `Todo(id: 1, title: "A")`, `.active` | пользовательские |
+| `Color` | `#RGB #RRGGBB #RRGGBBAA` | or a token such as `.primary` |
+| `[T]` | `[1, 2]` | list |
+| `[String: T]` | `["a": 1]`, `[:]` | map; keys are always `String` (`E0125`) |
+| `T?` | `nil` | optional |
+| `fn(A, B) -> R` | `x => x * 2` | function |
+| `struct`/`enum` | `Todo(id: 1, title: "A")`, `.active` | user-defined |
 
-Ничего, кроме `Int → Float`, не приводится неявно. Строки строятся интерполяцией: `"a" + n`
-— ошибка с исправлением на `"a{n}"`. `+` склеивает только `String + String`.
+Nothing but `Int → Float` converts implicitly. Strings are built by interpolation:
+`"a" + n` is an error fixed to `"a{n}"`. `+` joins only `String + String`.
 
-Если тип нельзя вывести (пустой список, `nil`), нужна аннотация: `state items: [Todo] = []`,
-`state picked: Todo? = nil` (`E0308`).
+When a type cannot be inferred (an empty list, `nil`), annotate it:
+`state items: [Todo] = []`, `state picked: Todo? = nil` (`E0308`).
 
-## Виды (view)
+## Views
 
 ```
 view Card(title: String, onTap: fn() = {}, bind value: Bool, content: slot) {
-  state count = 0                      // реактивное изменяемое состояние (инициализатор — один раз)
+  state count = 0                      // reactive mutable state (the initializer runs once)
   state items: [Todo] = []
-  pref darkMode = false                // состояние, сохраняемое платформой; общее для приложения по имени
-  let doubled = count * 2              // производное значение, пересчитывается само, только чтение
-  fn inc() { count += 1 }              // может читать и менять state
-  on appear { load() }                 // обработчик события, пока вид на экране
-  on back if count > 0 { count -= 1 }  // `if` — обработчик активен, только пока условие истинно
-  Column(gap: 8) {                     // затем — ровно одно дерево интерфейса
+  pref darkMode = false                // state kept by the platform; app-wide by name
+  let doubled = count * 2              // derived value, recomputes itself, read-only
+  fn inc() { count += 1 }              // can read and write state
+  on appear { load() }                 // event handler while the view is on screen
+  on back if count > 0 { count -= 1 }  // `if` = active only while the condition holds
+  Column(gap: 8) {                     // then exactly one UI tree
     Text(title)
-    content                            // одиночное имя в нижнем регистре вставляет slot-параметр
+    content                            // a bare lowercase name inserts the slot parameter
   }
 }
 ```
 
-Порядок внутри вида: сначала члены (`state`, `pref`, `let`, `fn`, `on`), затем элементы.
-Тело вида декларативно: инструкций в дереве нет (`E0113`); логика — в `fn` и обработчиках.
+Order inside a view: members first (`state`, `pref`, `let`, `fn`, `on`), then elements.
+A view body is declarative: there are no statements in the tree (`E0113`); logic lives in
+`fn` members and handlers.
 
-### Параметры
+### Parameters
 
-| Запись | Смысл |
+| Form | Meaning |
 |---|---|
-| `name: Type [= default]` | только чтение; реактивен — при изменении у вызывающего обновится |
-| `bind name: Type` | двусторонняя связь: вызывающий передаёт изменяемое место (`Checkbox(value: todo.done)`) |
-| `name: slot` | дочерний блок: `Card { Text("Hi") }`; у вида не более одного slot |
+| `name: Type [= default]` | read-only; reactive — updates when the caller's value changes |
+| `bind name: Type` | two-way: the caller passes a mutable place (`Checkbox(value: todo.done)`) |
+| `name: slot` | a child block: `Card { Text("Hi") }`; at most one slot per view |
 
-Первый аргумент (первый не-slot параметр) может быть позиционным, остальные — только
-`name: value` (`E0207`). Любое использование вида принимает и «внешние» props, применяемые к
-его корню: `width height minWidth minHeight maxWidth maxHeight aspectRatio grow alignSelf id
-opacity offsetX offsetY scale`.
+The first argument (the first non-slot parameter) may be positional; the rest are always
+`name: value` (`E0207`). Every view use also accepts "outer" props applied to its root:
+`width height minWidth minHeight maxWidth maxHeight aspectRatio grow alignSelf id opacity
+offsetX offsetY scale`.
 
-### Состояние: state, pref, let
+### State: state, pref, let
 
-- `state` — сигнал. Изменение перезапускает ровно те props, которые его читают.
-- `pref` — тот же state, но значение хранится в настройках платформы (`SharedPreferences`,
-  `UserDefaults`, в headless — память симулятора) под ключом `vard.pref.<имя>` и восстанавливается
-  при запуске. Любой тип данных (структуры, списки, словари). Все `pref` с одним именем —
-  одно значение на всё приложение, типы обязаны совпадать (`E0223`).
-- `let` — вычисляемое значение (лениво, с кэшем и автоматическим отслеживанием зависимостей).
+- `state` — a signal. Changing it re-runs exactly the props that read it.
+- `pref` — the same as state, but the value is kept in platform preferences
+  (`SharedPreferences`, `UserDefaults`, headless — the simulator's memory) under the key
+  `vard.pref.<name>` and restored at launch. Any data type (structs, lists, maps). All
+  `pref`s with one name are one app-wide value, and their types must match (`E0223`).
+- `let` — a computed value (lazy, cached, dependencies tracked automatically).
 
-## Дерево интерфейса
+## The UI tree
 
 ```
-Element(args) { children }      // фигурные скобки — только у элементов с детьми
+Element(args) { children }      // braces only for elements that take children
 if cond { ... } else if c2 { ... } else { ... }
-for t in todos by t.id { ... }      // `by` — стабильный уникальный ключ
-for t, i in todos by t.id { ... }   // i — индекс (Int)
+for t in todos by t.id { ... }      // `by` = a stable unique key
+for t, i in todos by t.id { ... }   // i = index (Int)
 for i in range(0, 5) { ... }
 ```
 
-`by` обязателен по смыслу для структур с идентификатором (`W0401` без него): ключ сохраняет
-идентичность строки при сортировке и фильтрации. Два одинаковых ключа — `R0002`.
+`by` is effectively required for structs with an id (`W0401` without it): the key keeps a
+row's identity across sorting and filtering. Two equal keys are `R0002`.
 
-Элементы — не значения: их нельзя положить в переменную или вернуть из функции (`E0212`);
-для композиции — виды и slot-параметры.
+Elements are not values: they cannot be stored in a variable or returned from a function
+(`E0212`); compose with views and slot parameters.
 
-## Выражения
+## Expressions
 
 ```
-+ - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback   x! (распаковка)
-list[i]   map["k"] (T?)   s.field   .name (вариант enum или цветовой токен)
-x => x.done   (a, b) => a + b   x => { stmts }   { stmts }   // лямбды
++ - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback   x! (unwrap)
+list[i]   map["k"] (T?)   s.field   .name (an enum variant or a color token)
+x => x.done   (a, b) => a + b   x => { stmts }   { stmts }   // lambdas
 ```
 
-`.name` разрешается из ожидаемого типа: аргумента, аннотации переменной или другой стороны
-`==` (`x == .all`). Параметры лямбд выводятся из места передачи — аннотации не нужны.
+`.name` is resolved from the expected type: an argument, a variable's annotation, or the
+other side of `==` (`x == .all`). Lambda parameter types come from where the lambda is
+passed — no annotations needed.
 
-Нет: `self`/`this`, `?.` (`E0121`), `++`/`--` (`E0115`), `===`, точек с запятой, импортов,
-классов, цепочек модификаторов (`E0119`), `@State` (`E0124`), `{ x -> }` (`E0126`). Каждая
-из этих привычек распознаётся и сопровождается исправлением.
+Not in Vard: `self`/`this`, `?.` (`E0121`), `++`/`--` (`E0115`), `===`, semicolons,
+imports, classes, modifier chains (`E0119`), `@State` (`E0124`), `{ x -> }` (`E0126`).
+Each of these habits is recognized and comes with a fix.
 
-## Инструкции (тела функций и обработчиков)
+## Statements (function and handler bodies)
 
 ```
 let x = 1          var y = 2          x = v   x += v   x -= v
-map["k"] = v       map["k"] = nil     // удаление ключа
+map["k"] = v       map["k"] = nil     // removes the key
 if c { } else { }  for x in list { }  return v   print(a, b)
 ```
 
-Встроенные функции: `range(a, b)` (от a до b-1), `min`, `max`, `print` (в лог: `vard run --do log`).
+Built-in functions: `range(a, b)` (a to b-1), `min`, `max`, `print` (to the log:
+`vard run --do log`).
 
-## Что изменяемо
+## What is mutable
 
-`state`, `pref`, `bind`-параметры, локальные `var`, поля и элементы перечисленного
-(`todos[i].done = true`, `profile.name = "x"`, `counts["a"] = 1`) и переменная цикла `for`,
-идущего **непосредственно** по state (`for t in todos by t.id { Checkbox(value: t.done) }`).
+`state`, `pref`, `bind` parameters, local `var`s, fields and elements of those
+(`todos[i].done = true`, `profile.name = "x"`, `counts["a"] = 1`) and the loop variable of a
+`for` that runs **directly** over state (`for t in todos by t.id { Checkbox(value: t.done) }`).
 
-Параметры, `let` и элементы вычисляемого списка (`for t in todos.filter(...)`) — только
-чтение (`E0401`); такое состояние меняют по ключу: `todos.removeWhere(x => x.id == t.id)`.
+Parameters, `let` and items of a computed list (`for t in todos.filter(...)`) are
+read-only (`E0401`); such state is changed by key: `todos.removeWhere(x => x.id == t.id)`.
 
-Значения копируются, а не разделяются (copy-on-write внутри рантайма): функция, получившая
-структуру, получила копию. Модели не нужно думать об алиасинге.
+Values are copied, never shared (copy-on-write inside the runtime): a function that
+receives a struct received a copy. The model never has to think about aliasing.
 
-## Методы и свойства
+## Methods and properties
 
-| Тип | Свойства | Методы |
+| Type | Properties | Methods |
 |---|---|---|
 | `String` | `count isEmpty` | `trim() upper() lower() contains(s) startsWith(s) endsWith(s) split(sep) toInt() toFloat()` |
 | `Int` | | `toFloat() toString() abs()` |
 | `Float` | | `toInt() round() floor() ceil() abs() fixed(digits)` |
-| `[T]` | `count isEmpty first last` | `contains indexOf map filter find any all sum join sortedBy reversed`; на месте: `append insert removeAt remove removeWhere clear` |
-| `[String: T]` | `count isEmpty keys values` | `contains(key)`; на месте: `remove(key) clear()` |
+| `[T]` | `count isEmpty first last` | `contains indexOf map filter find any all sum join sortedBy reversed`; in place: `append insert removeAt remove removeWhere clear` |
+| `[String: T]` | `count isEmpty keys values` | `contains(key)`; in place: `remove(key) clear()` |
 
-Свойства читаются без `()`, методы вызываются с `()` (`E0215` с исправлением).
+Properties are read without `()`, methods are called with `()` (`E0215` with a fix).
 
-## Темы и токены
+## Themes and tokens
 
-Цвета в видах задаются только токенами — тогда тёмный режим работает сам:
+Colors in views are set through tokens only — then dark mode just works:
 `.background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear`.
-Собственные токены объявляются в `theme { }` (светлые значения) и `theme dark { }`.
-`font: "Inter"` в теме задаёт семейство по умолчанию (файлы шрифтов — в `fonts/` проекта).
-Подробно — [ui.md](ui.md#токены-и-темы).
+Custom tokens are declared in `theme { }` (light values) and `theme dark { }`.
+`font: "Inter"` in a theme sets the default family (font files go into the project's `fonts/`).
+Details: [UI](ui.md#tokens-and-themes).
 
-## Платформенная граница
+## The platform boundary
 
-`extern fn` — вызов платформы, `extern event` — событие от платформы, обработчик
-`on name(params) [if cond] { }`. Через границу проходят только данные (`Int Float String Bool
-Color`, структуры, enum, списки, словари, опциональные) и колбэки `fn(T)` для результатов,
-приходящих позже (`E0317`). Подробно — [platform.md](platform.md).
+`extern fn` is a call into the platform, `extern event` is an event from the platform with a
+handler `on name(params) [if cond] { }`. Only data crosses the boundary (`Int Float String Bool
+Color`, structs, enums, lists, maps, optionals) and callbacks `fn(T)` for results that arrive
+later (`E0317`). Details: [Platform](platform.md).
 
-## Квалифицированные имена
+## Qualified names
 
-Имя из пакета можно уточнить именем пакета: `charts.BarChart(...)`, `state s: ui.Style`,
-`geo.distance(a, b)`, а стандартное — `std.Button`. Это нужно только при конфликте двух
-пакетов (`E0231`), в остальных случаях имена пишутся как есть. Имена, начинающиеся с `_`, —
-приватные для своего пакета.
+A name from a package can be qualified with the package name: `charts.BarChart(...)`,
+`state s: ui.Style`, `geo.distance(a, b)`, and a std one with `std.Button`. This is needed
+only when two packages conflict (`E0231`); otherwise names are written as they are. Names
+starting with `_` are private to their package.

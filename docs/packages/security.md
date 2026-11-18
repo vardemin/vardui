@@ -1,45 +1,45 @@
-# Модель безопасности пакетов
+# Package security model
 
-Исходная посылка: зависимости добавляет агент, который может ошибаться и которого можно
-обмануть текстом (документацией, issue, веб-страницей). Поэтому система строится так, чтобы
-(1) агент не мог установить не то, (2) пакет не мог получить больше, чем одобрил человек, и
-(3) никто между автором и устройством не мог подменить код.
+The starting premise: dependencies are added by an agent that can make mistakes and can be
+deceived by text (documentation, an issue, a web page). So the system is built so that
+(1) the agent cannot install the wrong thing, (2) a package cannot get more than a person
+approved, and (3) nobody between the author and the device can substitute the code.
 
-## Угрозы и защиты
+## Threats and defenses
 
-| Угроза | Защита | Код |
+| Threat | Defense | Code |
 |---|---|---|
-| Агент «вспомнил» несуществующее имя; злоумышленник его зарегистрировал (slopsquatting) | `vard add` ставит только точные имена; на промах — «did you mean» из реального каталога, никогда не автозамена; MCP-описание инструмента требует искать, а не угадывать | `P001` |
-| Тайпсквоттинг (`tailwnd`, `charts` ↔ `chart`) | реестр отклоняет имя в одной правке от существующего имени другого владельца, зарезервированные слова | `P010` |
-| Пакет тихо получает доступ к секретам, разрешениям, сети, нативному коду | возможности вычисляет компилятор; манифест обязан совпадать; чувствительные требуют `[policy] allow`; MCP-инструмент не умеет одобрять | `P013`, `P008` |
-| Обновление добавляет пакету новую возможность | `vard.lock` хранит `caps=`; изменение — строка `!` в отчёте и в диффе; при отсутствии одобрения установка отклоняется | `P008` |
-| Подмена зависимости приватного реестра публичной (dependency confusion) | зависимость берётся ровно из одного реестра; место разрешения записано в индексе автора | — |
-| Подмена архива на хосте/зеркале/CDN | адресация содержимым: архив проверяется по `sha256` индекса и lock-файла | `P004` |
-| Подмена индекса | запись `(name, version, sha256)` обязана быть в подписанном журнале | `P004` |
-| Подмена реестра целиком / MITM | ключ реестра закрепляется при первом контакте; смена ключа — ошибка | `P005` |
-| Переписывание истории (тихая замена старой версии) | журнал — хеш-цепочка; клиент проверяет, что виденная голова — префикс; версии неизменяемы | `P005`, `P016` |
-| Пакет ломает чужой код, «перехватывая» имена | собственные имена побеждают; транзитивные зависимости невидимы; конфликт двух пакетов — явная квалификация | `E0231`, `E0232` |
-| Два пакета претендуют на одну нативную функцию | нативные имена глобальны, конфликт — ошибка компиляции | `E0233` |
-| Ложное «обратно совместимо» | semver вычисляется из API-диффа | `P015` |
-| Вредоносный пакет с нарочно сломанными тестами/прочим | гейт на сервере: компиляция, тесты headless, лимит размера | `P012`, `P014`, `P019` |
-| Prompt injection через документацию пакета | AGENT.md ограничен 6 КБ; скилл и AGENTS.md проекта предписывают агенту не одобрять возможности самостоятельно; одобрение — только через `vard.toml`, который ревьюит человек | — |
-| Утечка токена публикации | хранится только `sha256(token)`; токен привязан к владельцу; yank для отзыва версий | `P018` |
+| The agent "remembered" a non-existent name; an attacker registered it (slopsquatting) | `vard add` installs exact names only; a miss gets "did you mean" from the real catalog, never an automatic substitution; the MCP tool description requires searching, not guessing | `P001` |
+| Typosquatting (`tailwnd`, `charts` ↔ `chart`) | the registry refuses a name one edit away from an existing name of another owner, and reserved words | `P010` |
+| A package silently gains access to secrets, permissions, the network, native code | the compiler computes capabilities; the manifest must match; sensitive ones need `[policy] allow`; the MCP tool cannot approve | `P013`, `P008` |
+| An update gives a package a new capability | `vard.lock` stores `caps=`; the change is a `!` line in the report and in the diff; without approval installation is refused | `P008` |
+| A private registry's dependency replaced by a public one (dependency confusion) | a dependency comes from exactly one registry; where it resolved is recorded in the author's index entry | — |
+| An archive substituted on the host/mirror/CDN | content addressing: the archive is checked against the `sha256` of the index and the lockfile | `P004` |
+| The index substituted | the `(name, version, sha256)` entry must be in the signed log | `P004` |
+| The whole registry substituted / MITM | the registry key is pinned on first contact; a changed key is an error | `P005` |
+| History rewritten (an old version quietly replaced) | the log is a hash chain; the client checks that the head it saw is a prefix; versions are immutable | `P005`, `P016` |
+| A package breaks other code by "capturing" names | your own names win; transitive dependencies are invisible; a conflict of two packages needs explicit qualification | `E0231`, `E0232` |
+| Two packages claim one native function | native names are global, a conflict is a compile error | `E0233` |
+| A false "backward compatible" | semver is computed from the API diff | `P015` |
+| A malicious package with deliberately broken tests etc. | the gate runs on the server: compile, headless tests, size limit | `P012`, `P014`, `P019` |
+| Prompt injection through a package's docs | AGENT.md is limited to 6 KB; the skill and the project's AGENTS.md tell the agent never to approve capabilities by itself; approval happens only through `vard.toml`, which a person reviews | — |
+| A leaked publish token | only `sha256(token)` is stored; a token is bound to its owner; yank to withdraw versions | `P018` |
 
-## Чего система не обещает
+## What the system does not promise
 
-- **Отсутствие злого умысла в коде пакета.** Возможности ограничивают, *что* пакет может
-  делать, но не *как*: пакет с одобренной `network` может отправлять данные. Решение об
-  одобрении — за человеком; `vard info` показывает, зачем нужна каждая возможность.
-- **Нативный код.** Возможность `native` означает исполнение Kotlin/Swift-кода пакета без
-  ограничений платформы Vard. Её одобряют так же осторожно, как зависимость в Gradle.
-- **Доступность.** Зеркало может не отдавать обновления (заморозка). Это обнаруживается
-  только по сравнению с другим источником; в дорожной карте — свидетели журнала (witnesses).
+- **No malicious intent in a package's code.** Capabilities limit *what* a package can do,
+  not *how*: a package with approved `network` can send data. The approval is a person's
+  decision; `vard info` shows why each capability is needed.
+- **Native code.** The `native` capability means running the package's Kotlin/Swift code
+  outside Vard's limits. Approve it as carefully as a Gradle dependency.
+- **Availability.** A mirror can withhold updates (a freeze attack). That is detectable only
+  by comparing with another source; log witnesses are on the roadmap.
 
-## Рекомендации
+## Recommendations
 
-- Коммитьте `vard.lock` и смотрите в диффах на `caps=` и `sha256=`.
-- В CI: `vard install` (без `--allow`) — упадёт, если кто-то добавил зависимость с
-  неодобренной возможностью; `vard registry verify URL` — периодическая проверка реестра.
-- Держите `private/` реестра вне публичного хостинга; ключ — в секретах CI.
-- Для агентов: скилл `vard-packages` уже содержит правило «на `P008` — остановиться и
-  спросить пользователя».
+- Commit `vard.lock` and watch `caps=` and `sha256=` in diffs.
+- In CI: `vard install` (without `--allow`) fails if someone added a dependency with an
+  unapproved capability; run `vard registry verify URL` periodically.
+- Keep a registry's `private/` out of public hosting; keep the key in CI secrets.
+- For agents: the `vard-packages` skill already contains the rule "on `P008`, stop and ask
+  the user".

@@ -1,0 +1,19 @@
+[book]
+title = "VardUI"
+description = "An AI-first cross-platform UI framework: the Vard language, a reactive runtime, headless tooling and a package system built for agents."
+authors = ["VardUI contributors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+
+[output.html]
+git-repository-url = "https://github.com/vardemin/vardui"
+edit-url-template = "https://github.com/vardemin/vardui/edit/master/{path}"
+site-url = "/vardui/"
+default-theme = "light"
+preferred-dark-theme = "navy"
+
+[output.html.search]
+enable = true

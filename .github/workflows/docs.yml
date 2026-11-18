@@ -1,0 +1,44 @@
+# Builds the documentation site (mdBook, docs/ + book.toml) and publishes it to the
+# gh-pages branch, which GitHub Pages serves at https://vardemin.github.io/vardui/.
+name: docs
+
+on:
+  push:
+    branches: [master]
+    paths: ["docs/**", "book.toml", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      MDBOOK_VERSION: v0.5.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: |
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+          mdbook --version
+
+      - name: Build
+        run: |
+          mdbook build
+          touch target/book/.nojekyll
+
+      - name: Publish to gh-pages
+        working-directory: target/book
+        run: |
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish docs from ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

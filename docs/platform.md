@@ -1,58 +1,59 @@
-# Платформа и нативные модули
+# Platform and native modules
 
-Всё платформенное проходит через две декларации — они же граница между Vard и нативным кодом:
+Everything platform-specific goes through two declarations — they are also the boundary
+between Vard and native code:
 
-- `extern fn name(params) -> T` — приложение вызывает платформу;
-- `extern event name(params)` — платформа сообщает приложению; обработчик в виде:
-  `on name(params) [if cond] { ... }` активен, пока вид на экране.
+- `extern fn name(params) -> T` — the app calls the platform;
+- `extern event name(params)` — the platform tells the app; the handler in a view,
+  `on name(params) [if cond] { ... }`, is active while the view is on screen.
 
-Стандартная платформа объявлена на самом Vard (`vard doc std`); каждую функцию реализуют
-headless-симулятор и Android-хост (iOS — в дорожной карте). Справочник для агентов —
-`vard doc native`.
+The standard platform is declared in Vard itself (`vard doc std`); every function is
+implemented by the headless simulator and by the Android host (iOS is on the roadmap). The
+reference for agents is `vard doc native`.
 
-## Жизненный цикл и система
+## Lifecycle and system
 
 ```
-on appear { load() }                  // этот экземпляр вида только что показан
+on appear { load() }                  // this view instance was just shown
 on appResume { refresh() }    on appPause { save() }
 on deepLink(url) { route(url) }       // vard://...
 ```
 
-Глобалы (реактивные, только чтение): `safeArea` (`top bottom left right`), `keyboardHeight`,
+Globals (reactive, read-only): `safeArea` (`top bottom left right`), `keyboardHeight`,
 `backProgress`, `isDark`, `screenWidth`, `screenHeight`, `platform`.
-Функции: `setColorScheme(.dark|.light|.system)`, `openUrl(url)`, `shareText(text)`,
+Functions: `setColorScheme(.dark|.light|.system)`, `openUrl(url)`, `shareText(text)`,
 `haptic(.success)`, `openAppSettings()`.
 
-## Назад и predictive back
+## Back and predictive back
 
 ```
 on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
 Column(offsetX: backProgress * 64, opacity: 1 - backProgress * 0.3) { ... }
 ```
 
-Жест забирает самый внутренний активный обработчик. Если активных нет, назад обрабатывает
-система (на Android 14+ — системная анимация «назад на домашний экран»). Флаг «перехватывает ли
-приложение back» передаётся хосту в каждом кадре.
+The innermost enabled handler takes the gesture. With none enabled, the system handles back
+(on Android 14+ with the system back-to-home animation). Whether the app intercepts back is
+passed to the host in every frame.
 
 ## Edge-to-edge
 
-Корень всегда рисуется под системными панелями. Если код нигде не упоминает `safeArea`,
-рантайм сам добавляет отступы корню. Иначе раскладкой управляете вы: `safeArea: .top` у
-элемента добавляет отступы к его padding, `safeArea.bottom` читает значение (с клавиатурой).
-Поле ввода в фокусе прокручивается над клавиатурой автоматически.
+The root always draws under the system bars. If the code never mentions `safeArea`, the
+runtime pads the root itself. Otherwise you control placement: `safeArea: .top` on an
+element adds the insets to its padding, `safeArea.bottom` reads the value (including the
+keyboard). The focused input scrolls above the keyboard automatically.
 
-## Хранилища
+## Storage
 
 ```
-pref onboarded = false            // настройки, общие для приложения по имени
+pref onboarded = false            // settings, app-wide by name
 let t = secureGet("token")        // String? — Keychain / Android Keystore (AES-256-GCM)
 secureSet("token", value)         // -> Bool;  secureRemove("token")
-prefGet(key) / prefSet(key, v) / prefRemove(key)   // сырые строковые настройки
+prefGet(key) / prefSet(key, v) / prefRemove(key)   // raw string preferences
 ```
 
-Секреты — только в `secure*`, никогда в `pref`.
+Secrets go into `secure*` only, never into `pref`.
 
-## Разрешения
+## Permissions
 
 ```
 state cam: PermissionStatus = .notDetermined
@@ -62,49 +63,49 @@ if cam == .blocked { Button("Open settings", onTap: { openAppSettings() }) }
 ```
 
 `Permission`: `.notifications .camera .microphone .location .photos .contacts`.
-`PermissionStatus`: `.notDetermined .granted .denied .blocked` (`blocked` — система больше не
-покажет диалог). На Android разрешение должно быть в манифесте; отсутствующее отвечает `denied`
-и пишет в logcat, что добавить.
+`PermissionStatus`: `.notDetermined .granted .denied .blocked` (`blocked` — the system will
+not show the dialog again). On Android the permission must be in the manifest; a missing one
+answers `denied` and logs what to add.
 
-## Уведомления и пуши
+## Notifications and push
 
 ```
-on pushReceived(m) { inbox.insert(0, m) }            // пришло, пока приложение открыто
-on pushOpened(m) { route(m.data["screen"] ?? "") }   // тап по уведомлению (в т. ч. холодный старт)
+on pushReceived(m) { inbox.insert(0, m) }            // arrived while the app is open
+on pushOpened(m) { route(m.data["screen"] ?? "") }   // the user tapped a notification (also cold start)
 on pushTokenChanged(t) { sendTokenToServer(t) }
 getPushToken(t => { token = t ?? "" })
 showNotification("Title", "Body", ["screen": "inbox"])
 ```
 
-Провайдер пушей на Android — FCM из пакета `firebase`.
+The push provider on Android is FCM from the `firebase` package.
 
-## Свои нативные функции
+## Your own native functions
 
-1. Объявить API на Vard; данные — структуры и enum:
+1. Declare the API in Vard; data are structs and enums:
    ```
    struct Place { name: String, lat: Float, lng: Float }
    extern fn searchPlaces(query: String, done: fn([Place], String?))
    extern event locationChanged(lat: Float, lng: Float)
    ```
-2. Построить интерфейс и протестировать headless (`mock`, `resolve`, `emit` — [testing.md](testing.md)).
-3. Сгенерировать типизированный Kotlin: `vard bindings --kotlin --class PlacesModule --out ...`
-   и реализовать абстрактные методы (колбэки можно вызывать с любого потока; `send()` вместо
-   `resolve()` — для слушателей).
-4. Зарегистрировать: `MainActivity.modules()`, мета-данные `dev.vard.module.<name>` в манифесте
-   библиотеки — или, лучше, **оформить пакетом** с `[native.android]`: тогда любое приложение
-   получит его одной командой `vard add`, а Android-оболочка подключит модуль сама
-   ([packages/authoring.md](packages/authoring.md#нативный-код)).
+2. Build the UI and test it headless (`mock`, `resolve`, `emit` — see [Testing](testing.md)).
+3. Generate typed Kotlin: `vard bindings --kotlin --class PlacesModule --out ...` and
+   implement the abstract methods (callbacks may be answered from any thread; `send()`
+   instead of `resolve()` for listeners).
+4. Register it: `MainActivity.modules()`, `dev.vard.module.<name>` meta-data in a library's
+   manifest — or, better, **ship it as a package** with `[native.android]`: then any app gets
+   it with one `vard add`, and the Android shell includes the module by itself
+   ([Writing a package](packages/authoring.md#native-code)).
 
-### Как ходят данные
+### How data crosses
 
-Формат — JSON. Кодирование нетипизированное, декодирование — по типу, *объявленному в Vard*
-(поля структур по имени, enum по имени варианта, умолчания для отсутствующих полей). Поэтому
-одна нативная функция обслуживает любые типы приложения: `firestoreGet*` из пакета `firebase`
-возвращает документ, а Vard превращает его в вашу структуру.
+The format is JSON. Encoding is untyped; decoding follows the type *declared in Vard*
+(struct fields by name, enums by variant name, defaults for missing fields). So one native
+function serves any app type: `firestoreGet*` from the `firebase` package returns a document,
+and Vard turns it into your struct.
 
-Функции в аргументах становятся `{"$callback": id}`; хост отвечает `callback(id, json, keep)`.
-Колбэк вида, который ушёл с экрана, тихо отбрасывается. Нереализованная на устройстве функция —
-`R0010`.
+Functions in arguments become `{"$callback": id}`; the host answers with
+`callback(id, json, keep)`. A callback of a view that has left the screen is dropped
+silently. A function not implemented on the device is `R0010`.
 
-Имена `extern fn`/`extern event` глобальны для приложения: платформа вызывает их по имени.
-Два пакета не могут объявить одно нативное имя (`E0233`).
+`extern fn`/`extern event` names are global to the app: the platform calls them by name.
+Two packages cannot declare the same native name (`E0233`).

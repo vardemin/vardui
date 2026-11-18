@@ -1,70 +1,74 @@
-# Создание пакета
+# Writing a package
 
-## Структура
+## Layout
 
 ```text
 charts/
-  vard.toml              манифест: [package], зависимости, [sim], [[migrate]], [native.android]
-  bars.vard              исходники: все .vard, кроме каталогов ниже
-  AGENT.md               для агентов (обязательно, ≤ 6 КБ)
-  README.md              для людей (необязательно)
-  example/               приложение-доказательство: компилируется и тестируется при публикации
+  vard.toml              manifest: [package], dependencies, [sim], [[migrate]], [native.android]
+  bars.vard              sources: every .vard outside the directories below
+  AGENT.md               for agents (required, ≤ 6 KB)
+  README.md              for people (optional)
+  example/               the proof app: compiled and tested at publish
     vard.toml            [dependencies] charts = { path = ".." }
     app.vard
     tests/*.vtest
-  skills/NAME/SKILL.md   необязательные скиллы; у потребителя — .claude/skills/charts-NAME/
-  native/android/        необязательная Gradle-библиотека с нативной реализацией
-  assets/, fonts/        ресурсы
+  skills/NAME/SKILL.md   optional skills; consumers get them as .claude/skills/charts-NAME/
+  native/android/        an optional Gradle library with the native implementation
+  assets/, fonts/        resources
 ```
 
-Исходниками пакета считаются все `.vard`, кроме каталогов `example/ examples/ native/ skills/
-tests/` и скрытых. В архив попадают все файлы, кроме скрытых, `target/`, `build/`, `*.vpk` и
-`vard.lock`.
+A package's sources are all `.vard` files except those in `example/ examples/ native/
+skills/ tests/` and hidden directories. The archive gets every file except hidden ones,
+`target/`, `build/`, `*.vpk` and `vard.lock`.
 
-Пример из репозитория: [`packages/tailwind`](../../packages/tailwind) (дизайн-система) и
-[`packages/firebase`](../../packages/firebase) (нативный SDK).
+Examples in the repository:
+[`packages/tailwind`](https://github.com/vardemin/vardui/tree/master/packages/tailwind)
+(a design system) and
+[`packages/firebase`](https://github.com/vardemin/vardui/tree/master/packages/firebase)
+(a native SDK).
 
-## Манифест
+## The manifest
 
 ```toml
 [package]
-name = "charts"                 # [a-z][a-z0-9_]*, до 32 символов; это же — квалификатор в коде
+name = "charts"                 # [a-z][a-z0-9_]*, up to 32 chars; also the qualifier in code
 version = "1.4.0"
-summary = "Bar and line charts drawn with Vard elements"   # одна строка — видна в поиске
+summary = "Bar and line charts drawn with Vard elements"   # one line — shown in search
 keywords = ["chart", "graph", "bar"]
 license = "MIT"
 repository = "https://example.com/charts"
-vard = ">=0.1"                  # версии ядра, с которыми работает пакет
-capabilities = []               # обязано совпадать с вычисленным (`vard api --caps`)
+vard = ">=0.1"                  # core versions the package works with
+capabilities = []               # must equal the computed set (`vard api --caps`)
 
 [dependencies]
-tailwind = "1.0"                # только версии из реестров: path-зависимости не публикуются
+tailwind = "1.0"                # registry versions only: path dependencies are not publishable
 
-[sim]                           # headless-ответы для своих extern fn (JSON в строке)
+[sim]                           # headless answers for your extern fns (JSON in a string)
 chartsServerTime = '1700000000'
 
-[[migrate]]                     # переименования → E0234 + fix у потребителей
+[[migrate]]                     # renames → E0234 + fix for consumers
 since = "2.0.0"
-from = "BarChart.max"           # параметр вида: View.param
+from = "BarChart.max"           # a view parameter: View.param
 to = "BarChart.scale"
 
 [[migrate]]
 since = "2.0.0"
-from = "Chart"                  # имя верхнего уровня
+from = "Chart"                  # a top-level name
 to = "BarChart"
 
 [native.android]
-module = "dev.example.charts.ChartsModule"   # класс VardModule
-gradle = "native/android"                    # Android-библиотека внутри пакета
+module = "dev.example.charts.ChartsModule"   # the VardModule class
+gradle = "native/android"                    # an Android library inside the package
 ```
 
-## Публичный API
+## Public API
 
-Публично всё, что объявлено на верхнем уровне и не начинается с `_`: виды, структуры, enum,
-функции, `extern fn/event`, константы, токены темы. Посмотреть, что видят потребители:
+Public is everything declared at the top level that does not start with `_`: views,
+structs, enums, functions, `extern fn/event`, constants, theme tokens. See what consumers
+see:
 
 ```bash
-vard api charts/            # API + возможности с доказательством
+vard api charts/            # API + capabilities with evidence
 ```
 
 ```text
@@ -73,88 +77,91 @@ view Badge(label: String)
 capabilities: none
 ```
 
-Рекомендации:
+Recommendations:
 
-- Помощники — с `_`: `view _Bar(...)`, `fn _scale(...)`. Их можно менять без major-версии.
-- Экспортируемые имена — отличимые: они живут в пространстве имён приложения. Конфликт
-  с другим пакетом не сломает сборку молча (`E0231`), но заставит потребителя квалифицировать.
-- Параметры с умолчаниями — добавление такого параметра остаётся minor-изменением.
-- Токены темы пакета (`theme { }`) становятся токенами приложения: это и есть способ
-  поставлять дизайн-системы (так устроен `tailwind`).
+- Helpers start with `_`: `view _Bar(...)`, `fn _scale(...)`. They can change without a
+  major version.
+- Exported names should be distinctive: they live in the app's namespace. A conflict with
+  another package will not silently break the build (`E0231`), but it forces consumers to
+  qualify.
+- Parameters with defaults — adding one stays a minor change.
+- A package's theme tokens (`theme { }`) become the app's tokens: that is how design systems
+  are shipped (this is how `tailwind` works).
 
 ## AGENT.md
 
-То, что агент прочитает, чтобы пользоваться пакетом (`vard doc charts` = AGENT.md +
-сгенерированный API + возможности). Бюджет — 6 КБ ≈ 1500 токенов (`P011`). Пишите для модели:
+What an agent reads to use the package (`vard doc charts` = AGENT.md + the generated API +
+capabilities). The budget is 6 KB ≈ 1500 tokens (`P011`). Write for a model:
 
-1. одна фраза — что это и когда брать;
-2. главные виды/функции — по одному компилируемому примеру;
-3. неочевидные правила (что передавать в `bind`, какие токены использовать);
-4. как тестировать headless: что отвечает `[sim]`, что нужно `resolve`/`emit`.
+1. one sentence — what it is and when to use it;
+2. the main views/functions — one compiling example each;
+3. non-obvious rules (what goes into a `bind`, which tokens to use);
+4. how to test headless: what `[sim]` answers, what needs `resolve`/`emit`.
 
-Список API не дублируйте — он генерируется и всегда точен.
+Do not repeat the API list — it is generated and always accurate.
 
-## Пример-доказательство
+## The example as proof
 
-`example/` — обычное приложение, зависящее от пакета по пути. Гейт публикации компилирует
-его и прогоняет все `.vtest` (тест исполняется против ближайшего `vard.toml`). Это
-одновременно документация «как пользоваться» и проверка, что пакет работает с текущим ядром.
+`example/` is an ordinary app that depends on the package by path. The publish gate
+compiles it and runs every `.vtest` (a test runs against the nearest `vard.toml`). It is both
+"how to use it" documentation and a check that the package works with the current core.
 
 ```bash
-vard test charts/           # тесты пакета и example/
+vard test charts/           # the package's and example/'s tests
 ```
 
-## Возможности
+## Capabilities
 
-Компилятор вычисляет возможности из кода: вызовы `secureGet/secureSet` → `secure`,
-`requestPermission` → `permissions`, `getPushToken`, `showNotification`, `on pushReceived` →
-`push`, `pref` и `prefGet` → `prefs`, `openUrl` → `links`, `shareText` → `share`,
-`on deepLink` → `deeplinks`, строки `https://` → `network`, объявление `extern fn/event` →
-`native`. `capabilities` в манифесте обязаны совпадать (`P013` с готовой строкой-исправлением).
-Лишние возможности — предупреждение: потребителям пришлось бы одобрять ненужное.
+The compiler computes capabilities from the code: calls to `secureGet/secureSet` →
+`secure`, `requestPermission` → `permissions`, `getPushToken`, `showNotification`,
+`on pushReceived` → `push`, `pref` and `prefGet` → `prefs`, `openUrl` → `links`, `shareText` →
+`share`, `on deepLink` → `deeplinks`, `https://` strings → `network`, declaring
+`extern fn/event` → `native`. The manifest's `capabilities` must match (`P013`, with a ready
+replacement line). Extra capabilities are a warning: consumers would have to approve
+something unneeded.
 
-## Нативный код
+## Native code
 
-Пакет может поставлять реализацию своих `extern fn/event`:
+A package can ship the implementation of its `extern fn/event`:
 
-1. объявите API на Vard в исходниках пакета;
-2. сгенерируйте базовый класс: `vard bindings charts/ --kotlin --package dev.example.charts --class ChartsModuleBase`;
-3. положите Android-библиотеку в `native/android/` (`build.gradle.kts`, `AndroidManifest.xml` с
-   `<meta-data android:name="dev.vard.module.charts" android:value="dev.example.charts.ChartsModule"/>`,
-   Kotlin-реализация);
-4. укажите `[native.android]` в манифесте;
-5. задайте `[sim]`, чтобы потребители могли запускать приложение headless.
+1. declare the API in Vard in the package's sources;
+2. generate a base class: `vard bindings charts/ --kotlin --package dev.example.charts --class ChartsModuleBase`;
+3. put an Android library into `native/android/` (`build.gradle.kts`, an `AndroidManifest.xml`
+   with `<meta-data android:name="dev.vard.module.charts" android:value="dev.example.charts.ChartsModule"/>`,
+   the Kotlin implementation);
+4. add `[native.android]` to the manifest;
+5. set `[sim]` so consumers can run the app headless.
 
-Android-оболочка подключает модуль автоматически: `settings.gradle.kts` спрашивает
-`vard android-modules <app>` и включает каждую библиотеку как `:vard-<name>`. Пример —
-[`packages/firebase/native/android`](../../packages/firebase/native/android).
+The Android shell includes the module automatically: `settings.gradle.kts` asks
+`vard android-modules <app>` and includes each library as `:vard-<name>`. Example:
+[`packages/firebase/native/android`](https://github.com/vardemin/vardui/tree/master/packages/firebase/native/android).
 
-## Версии и миграции
+## Versions and migrations
 
-Гейт сравнивает API с предыдущей опубликованной версией:
+The gate compares the API with the previous published version:
 
-| Изменение | Минимальный шаг |
+| Change | Minimal step |
 |---|---|
-| удалено имя, параметр, поле, вариант enum | major |
-| изменён тип, `bind`, возвращаемое значение, первый (позиционный) параметр | major |
-| параметр стал обязательным; добавлен обязательный параметр или поле без умолчания | major |
-| добавлено имя, вариант enum, параметр или поле с умолчанием | minor |
-| ничего в API | patch |
+| a name, parameter, field or enum variant removed | major |
+| a type, `bind`, return value or the first (positional) parameter changed | major |
+| a parameter became required; a required parameter or a field without a default added | major |
+| a name, enum variant, or a parameter/field with a default added | minor |
+| nothing in the API | patch |
 
-Для `0.x` major-изменение — это рост minor (`0.3 → 0.4`), как в Cargo.
+For `0.x` a major change is a minor bump (`0.3 → 0.4`), as in Cargo.
 
 ```text
 error P015: API change since 1.0.0 is major: ! ~ view BarChart: `max` removed — the version must be at least 2.0.0
   fix: version = "2.0.0"
 ```
 
-Каждое переименование сопровождайте `[[migrate]]` — тогда `vard check --fix` у потребителя
-перепишет код сам.
+Accompany every rename with `[[migrate]]` — then `vard check --fix` rewrites the consumer's
+code by itself.
 
-## Публикация
+## Publishing
 
 ```bash
-vard publish charts --registry acme --dry-run        # только гейт
+vard publish charts --registry acme --dry-run        # the gate only
 vard publish charts --registry acme --token $TOKEN
 ```
 
@@ -169,10 +176,10 @@ gate: charts 1.0.0
 published charts 1.0.0 to acme (log #1)
 ```
 
-Гейт проверяет: имя (допустимое, не зарезервированное, не в одной правке от чужого),
-однострочное описание, отсутствие path-зависимостей, AGENT.md и бюджет, размер архива
-(≤ 8 МБ), компиляцию с зависимостями, возможности, `[sim]`, миграции, тесты, неизменяемость
-версий и semver. Те же проверки выполняет сервер реестра при приёме по HTTP.
+The gate checks: the name (valid, not reserved, not one edit from someone else's), a
+one-line summary, no path dependencies, AGENT.md and its budget, archive size (≤ 8 MB),
+compilation with dependencies, capabilities, `[sim]`, migrations, tests, version
+immutability and semver. The registry server runs the same checks when accepting over HTTP.
 
-Отозвать версию (серьёзная ошибка, утёкший секрет): `vard yank charts@1.0.1 --registry DIR`.
-Существующие lock-файлы продолжат работать, новые разрешения её пропустят.
+To withdraw a version (a serious bug, a leaked secret): `vard yank charts@1.0.1 --registry DIR`.
+Existing lockfiles keep working; new resolutions skip it.

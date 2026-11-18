@@ -1,69 +1,69 @@
-# Диагностики
+# Diagnostics
 
-Каждая диагностика несёт стабильный код, место и строку кода, а когда исправление известно —
-`fix:`, который применяет `vard check --fix`. Короткое объяснение — `vard explain CODE`;
-полный список с объяснениями (на английском, для агентов) — `vard doc errors`.
+Every diagnostic carries a stable code, the location and the line of code, and — when the
+fix is known — a `fix:` that `vard check --fix` applies. A short explanation:
+`vard explain CODE`; the full list with explanations: `vard doc errors`.
 
 ```text
-app.vard:12:5 error E0202: unknown prop `fontSize` on `Text`
-  12 | Text("Hi", fontSize: 18)
+app.vard:2:14 error E0202: unknown prop `fontSize` on `Text`
+  2 | Text("Hi", fontSize: 18)
   fix: `fontSize` -> `size` (auto: vard check --fix)
 ```
 
-## Классы
+## Classes
 
-| Префикс | Где | Примеры |
+| Prefix | Where | Examples |
 |---|---|---|
-| `E01xx` | синтаксис | `E0106` лишняя `;`, `E0110` чужое ключевое слово, `E0111` импорт, `E0119` цепочка модификаторов |
-| `E02xx` | имена, элементы, props, пакеты | `E0201` неизвестный элемент, `E0202` неизвестный prop, `E0203` неизвестное имя, `E0206` нет обязательного аргумента |
-| `E03xx` | типы | `E0301` несовпадение типов, `E0304` неизвестный вариант enum, `E0314` опциональное без распаковки, `E0317` нельзя через нативную границу |
-| `E04xx` | изменяемость | `E0401` присваивание неизменяемому, `E0402` метод на месте у неизменяемого списка |
-| `W04xx` | предупреждения | `W0401` цикл без `by`, `W0403` `Input` без `value` |
-| `Rxxxx` | рантайм (печатается как `! R0003 … (file:line)`) | `R0003` запись в state во время рендера, `R0010` нет нативной реализации |
-| `Lxxx` | линты интерфейса | `L001` переполнение, `L002` маленькая цель касания, `L005` контраст |
-| `Pxxx` | пакеты и реестры (место — строка `vard.toml`) | `P001` нет пакета, `P008` политика, `P015` semver |
+| `E01xx` | syntax | `E0106` stray `;`, `E0110` a foreign keyword, `E0111` an import, `E0119` a modifier chain |
+| `E02xx` | names, elements, props, packages | `E0201` unknown element, `E0202` unknown prop, `E0203` unknown name, `E0206` missing required argument |
+| `E03xx` | types | `E0301` type mismatch, `E0304` unknown enum variant, `E0314` optional not unwrapped, `E0317` cannot cross the native boundary |
+| `E04xx` | mutability | `E0401` assignment to something immutable, `E0402` in-place method on an immutable list |
+| `W04xx` | warnings | `W0401` loop without `by`, `W0403` `Input` without `value` |
+| `Rxxxx` | runtime (printed as `! R0003 … (file:line)`) | `R0003` state written during render, `R0010` no native implementation |
+| `Lxxx` | UI lints | `L001` overflow, `L002` small tap target, `L005` contrast |
+| `Pxxx` | packages and registries (location: a line of `vard.toml`) | `P001` no such package, `P008` policy, `P015` semver |
 
-## Пакеты в компиляторе (E023x)
+## Packages in the compiler (E023x)
 
-| Код | Смысл | Что делать |
+| Code | Meaning | What to do |
 |---|---|---|
-| `E0230` | имя на `_` приватно для своего пакета | использовать публичный API (`vard doc PACKAGE`) |
-| `E0231` | имя экспортируют две прямые зависимости | квалифицировать: `charts.Badge(...)` |
-| `E0232` | имя из пакета, который не является прямой зависимостью | `vard add NAME` |
-| `E0233` | две стороны объявляют одно нативное имя | убрать дубль или переименовать на обеих сторонах |
-| `E0234` | имя/параметр переименованы в новой версии пакета | `vard check --fix` |
-| `E0235` | `pkg.Name`: нет такого пакета или такого публичного имени | проверить имя; при опечатке есть `fix:` |
+| `E0230` | a `_` name is private to its package | use the public API (`vard doc PACKAGE`) |
+| `E0231` | two direct dependencies export the name | qualify it: `charts.Badge(...)` |
+| `E0232` | the name comes from a package that is not a direct dependency | `vard add NAME` |
+| `E0233` | two sides declare the same native name | remove the duplicate or rename it on both sides |
+| `E0234` | a name/parameter was renamed in a newer package version | `vard check --fix` |
+| `E0235` | `pkg.Name`: no such package or no such public name | check the name; a typo comes with a `fix:` |
 
-## Менеджер пакетов (P0xx)
+## Package manager (P0xx)
 
-| Код | Смысл |
+| Code | Meaning |
 |---|---|
-| `P001` | пакета с таким именем нет; «did you mean» — список настоящих имён |
-| `P002` | реестр недоступен или не является реестром Vard |
-| `P003` | нет версии, удовлетворяющей требованию |
-| `P004` | нарушение целостности: хеш архива не совпадает или версии нет в подписанном журнале |
-| `P005` | сменился ключ реестра или переписана история журнала |
-| `P006` | несовместимые требования к одному пакету (разные major-линии) |
-| `P007` | пакет требует другую версию ядра vard |
-| `P008` | чувствительная возможность не одобрена в `[policy]` |
-| `P009` | версия отозвана (yank) |
-| `P010` | недопустимое, зарезервированное или слишком похожее на чужое имя |
-| `P011` | нет AGENT.md или превышен бюджет 6 КБ |
-| `P012` | пакет не компилируется |
-| `P013` | заявленные возможности не совпадают с вычисленными |
-| `P014` | тесты пакета не прошли |
-| `P015` | номер версии не соответствует изменению API |
-| `P016` | версия уже опубликована или не новее последней на линии |
-| `P017` | `[sim]` ссылается на необъявленную внешнюю функцию |
-| `P018` | нет токена или токен не владельца |
-| `P019` | архив больше 8 МБ |
-| `P020` | `vard.toml` — не корректный TOML (подмножество Vard) |
-| `P021` | неверное или неизвестное поле `vard.toml` |
-| `P022` | пакеты проекта отсутствуют или устарели |
+| `P001` | no package with this name; "did you mean" lists real names |
+| `P002` | the registry is unreachable or is not a Vard registry |
+| `P003` | no version satisfies the requirement |
+| `P004` | integrity failure: the archive hash differs, or the version is not in the signed log |
+| `P005` | the registry key changed or the log history was rewritten |
+| `P006` | incompatible requirements for one package (different major lines) |
+| `P007` | the package needs a different vard core version |
+| `P008` | a sensitive capability is not approved in `[policy]` |
+| `P009` | the version was yanked |
+| `P010` | an invalid, reserved or too-similar-to-someone-else's name |
+| `P011` | no AGENT.md, or it exceeds the 6 KB budget |
+| `P012` | the package does not compile |
+| `P013` | declared capabilities differ from the computed ones |
+| `P014` | the package's tests failed |
+| `P015` | the version number does not match the API change |
+| `P016` | the version is already published or is not newer than the latest on its line |
+| `P017` | `[sim]` refers to an undeclared extern |
+| `P018` | no token, or not the owner's token |
+| `P019` | the archive is larger than 8 MB |
+| `P020` | `vard.toml` is not valid TOML (the subset Vard uses) |
+| `P021` | a wrong or unknown field in `vard.toml` |
+| `P022` | the project's packages are missing or out of date |
 
-## Правила для новых диагностик (для разработчиков фреймворка)
+## Rules for new diagnostics (for framework developers)
 
-Новый код — стабильный, с записью в `explain.rs` (компилятор), `vard_runtime::EXPLAIN`
-(рантайм, линты) или `vard_pkg::EXPLAIN` (пакеты), и с `fix`, когда правильная правка
-известна. Если исправление очевидно, проверка продолжается так, будто оно уже применено, —
-одна итерация вместо нескольких, без лавины вторичных ошибок.
+A new code is stable, has an entry in `explain.rs` (compiler), `vard_runtime::EXPLAIN`
+(runtime, lints) or `vard_pkg::EXPLAIN` (packages), and a `fix` whenever the correct edit is
+known. When the fix is obvious, checking continues as if it were already applied — one
+iteration instead of several, no avalanche of follow-up errors.

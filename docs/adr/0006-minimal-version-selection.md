@@ -1,22 +1,22 @@
-# ADR-0006: Minimal version selection вместо решателя
+# ADR-0006: Minimal version selection instead of a solver
 
-**Статус:** принято
+**Status:** accepted
 
-**Контекст.** Решатели зависимостей (npm, Cargo, pub, pip) выбирают «новейшую совместимую»
-версию. Результат зависит от момента запуска; воспроизводимость обеспечивает lock-файл, а
-его отсутствие или регенерация меняет поведение. Ошибки решателя («не удалось найти
-согласованный набор») трудно объяснить и исправить — особенно модели. Вдобавок приложение
-Vard линкует одну версию каждого пакета (общее пространство имён), поэтому выбор версии
-должен быть однозначным.
+**Context.** Dependency solvers (npm, Cargo, pub, pip) pick the "newest compatible" version.
+The result depends on when they run; reproducibility comes from a lockfile, and losing or
+regenerating it changes behavior. Solver errors ("could not find a consistent set") are hard
+to explain and fix — especially for a model. On top of that, a Vard app links one version of
+each package (a shared namespace), so version selection must be unambiguous.
 
-**Решение.** Minimal version selection (как Go modules). Требование — минимум на линии
-совместимости (`"1.4"` = ≥ 1.4.0, < 2.0.0; `0.x` — отдельные линии). Обход графа требований
-от приложения; для каждого пакета берётся наибольший из минимумов; требования на разных
-линиях — `P006` с перечислением, кто чего хочет. Версии на линии публикуются только по
-возрастанию, поэтому «наименьшая существующая ≥ минимума» стабильна. Обновление — явная
-правка требований в `vard.toml` (`vard update`), которую видно в диффе.
+**Decision.** Minimal version selection (as in Go modules). A requirement is a minimum on a
+compatibility line (`"1.4"` = ≥ 1.4.0, < 2.0.0; `0.x` lines are separate). Walk the
+requirement graph from the app; for each package take the largest of the minimums;
+requirements on different lines are `P006`, listing who wants what. Versions on a line are
+published only in increasing order, so "the smallest existing version ≥ the minimum" is
+stable. An upgrade is an explicit edit of the requirements in `vard.toml` (`vard update`),
+visible in the diff.
 
-**Последствия.** + одинаковый результат сегодня, завтра и в CI, с lock-файлом и без; без
-бэктрекинга; каждая ошибка объяснима одной строкой; lock только закрепляет хеши и
-возможности. − новые исправления не приходят сами — их приносит `vard update`; авторам
-пакетов стоит поднимать минимальные требования, когда им нужны исправления зависимостей.
+**Consequences.** + the same result today, tomorrow and in CI, with or without a lockfile;
+no backtracking; every error is explainable in one line; the lockfile only pins hashes and
+capabilities. − new fixes do not arrive by themselves — `vard update` brings them; package
+authors should raise their minimum requirements when they need a dependency's fix.

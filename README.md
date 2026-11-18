@@ -1,9 +1,11 @@
 # VardUI
 
-Кроссплатформенный UI-фреймворк, у которого основной «разработчик» — LLM-агент.
-Язык `Vard` + реактивный рантайм + тулинг, где каждый шаг цикла
-«написать → проверить → запустить → понять, что не так» стоит минимум токенов и
-не требует устройства.
+A cross-platform UI framework whose primary "developer" is an LLM agent. The `Vard`
+language, a reactive runtime and tooling where every step of the
+"write → check → run → understand what went wrong" loop costs as few tokens as possible
+and needs no device.
+
+**Documentation: https://vardemin.github.io/vardui/** (sources in [docs/](docs/README.md)).
 
 ```
 view App {
@@ -21,37 +23,37 @@ $ vard run --do 'tap "Tap me"'
 ~ Text "Tapped 1 times" @2
 ```
 
-## Что уже работает (v0.3, этот репозиторий)
+## What works today (v0.3, this repository)
 
-| Компонент | Что делает |
+| Component | What it does |
 |---|---|
-| `crates/vard-lang` | лексер, парсер с восстановлением после ошибок, bidirectional type checker, диагностики с машинно-применимыми исправлениями, реестр элементов (единый источник правды для компилятора, рантайма и документации), std на самом Vard: виды и платформенный API (`extern fn` / `extern event`) |
-| `crates/vard-runtime` | fine-grained реактивность (signals / computed / effects, без virtual DOM), keyed-списки, flex/grid/wrap-layout с объяснением размеров (`why`), семантическое дерево, диффы, UI-линты, headless-растеризация в PNG (тени, градиенты, скругления по углам, шрифты проекта), JSON-мост к нативному коду, симулятор платформы (prefs, secure storage, разрешения, пуши, back, insets) |
-| `crates/vard-pkg` | пакеты: `vard.toml`, semver, minimal version selection, `vard.lock`, детерминированные архивы `.vpk`, статические реестры (встроенный, каталог, HTTP) с подписанным журналом |
-| `crates/vard-cli` | `vard check [--fix] [--json]`, `run --do`, `test` (`.vtest`), `doc`, `explain`, `new`, `bindings --kotlin`; пакеты: `search info add remove install update api pack publish yank bundle`; `registry init/token/serve/verify`; `mcp` (MCP-сервер на stdio) |
-| `crates/vard-ffi` | `cdylib` для нативных оболочек: C ABI (`vard_*`) и JNI — mount, касания, ввод, тема, insets, predictive back, события, колбэки нативных модулей, платформенное измерение текста, кадр (формат v2) |
-| `platforms/android` | библиотека `:vard` (рантайм + `VardActivity` + модули ядра), приложение `:app`; нативные модули пакетов подключаются автоматически ([как собрать](platforms/android/README.md)) |
-| `packages/` | пакеты, встроенные в инструмент (реестр `builtin`): `tailwind`, `firebase` (с нативным модулем Android) |
-| `knowledge/` | `llms.txt` (полный справочник языка), `design.md`, `native.md`, `packages.md`, `AGENTS.md`, скиллы `vard-app`, `vard-debug`, `vard-native`, `vard-design`, `vard-packages` — `vard new` кладёт их в каждый проект вместе с `.mcp.json` |
-| `examples/` | `todo`, `patterns`, `native` (разрешения, пуши, prefs, keychain, edge-to-edge, back), `showcase` (дизайн в стиле Tailwind), `firebase` — все с `.vtest` |
+| `crates/vard-lang` | lexer, parser with error recovery, bidirectional type checker, diagnostics with machine-applicable fixes, element registry (single source of truth for compiler, runtime and docs), std written in Vard: views and the platform API (`extern fn` / `extern event`), package linker and compiler-computed package contracts |
+| `crates/vard-runtime` | fine-grained reactivity (signals / computed / effects, no virtual DOM), keyed lists, flex/grid/wrap layout that explains sizes (`why`), semantic tree, diffs, UI lints, headless PNG rasterization (shadows, gradients, per-corner radii, project fonts), JSON bridge to native code, platform simulator (prefs, secure storage, permissions, push, back, insets) |
+| `crates/vard-pkg` | packages: `vard.toml`, semver, minimal version selection, `vard.lock`, deterministic `.vpk` archives, static registries (builtin, directory, HTTP) with a signed log |
+| `crates/vard-cli` | `vard check [--fix] [--json]`, `run --do`, `test` (`.vtest`), `doc`, `explain`, `new`, `bindings --kotlin`; packages: `search info add remove install update api pack publish yank bundle`; `registry init/token/serve/verify`; `mcp` (MCP server on stdio) |
+| `crates/vard-ffi` | `cdylib` for native shells: C ABI (`vard_*`) and JNI — mount, touches, input, theme, insets, predictive back, events, native module callbacks, platform text measurement, frame (format v2) |
+| `platforms/android` | `:vard` library (runtime + `VardActivity` + core modules), `:app` shell; packages' native modules are included automatically ([how to build](https://vardemin.github.io/vardui/android.html)) |
+| `packages/` | packages bundled with the toolchain (the `builtin` registry): `tailwind`, `firebase` (with an Android native module) |
+| `knowledge/` | `llms.txt` (complete language reference), `design.md`, `native.md`, `packages.md`, `AGENTS.md`, skills `vard-app`, `vard-debug`, `vard-native`, `vard-design`, `vard-packages` — `vard new` puts them into every project together with `.mcp.json` |
+| `examples/` | `todo`, `patterns`, `native` (permissions, push, prefs, keychain, edge-to-edge, back), `showcase` (Tailwind-style design), `firebase` — all with `.vtest` files |
 
-### Платформенные возможности
+### Platform features
 
-| Возможность | В языке | На Android |
+| Feature | In the language | On Android |
 |---|---|---|
-| Пуши и их обработка | `on pushReceived(m)`, `on pushOpened(m)`, `getPushToken`, `showNotification` | FCM (пакет `firebase`), уведомления в фоне, открытие по тапу (в т. ч. холодный старт) |
-| Разрешения | `permissionStatus`, `requestPermission(.camera, s => ...)`, `.blocked` → `openAppSettings()` | runtime permissions, учёт «больше не спрашивать» |
-| Преференсы | `pref theme = "light"` — state, сохраняемый между запусками; `prefGet/prefSet` | SharedPreferences |
-| Keychain | `secureGet/secureSet/secureRemove` | AES-256-GCM, ключ в Android Keystore |
-| Edge-to-edge | рисуем под системными барами; `safeArea: .top/.bottom/...`, `safeArea.top`, `keyboardHeight` | insets баров, выреза и клавиатуры; фокусный `Input` прокручивается над клавиатурой |
-| Predictive back | `on back if stack.count > 1 { ... }`, `backProgress` для анимации | `OnBackAnimationCallback` (API 34+), системная анимация «назад на домашний», если приложение не перехватывает |
-| Любой дизайн | тени, градиенты, радиусы по углам, `Grid`, `Row(wrap:)`, веса 100–900, шрифты проекта, letter-spacing, offset/scale, clip | тот же кадр рисуется Canvas'ом; текст меряется платформенным шейпером |
-| Нативные SDK | `extern fn` / `extern event`, данные — структуры/enum/списки/map | `vard bindings --kotlin` → типизированный базовый класс; модули-библиотеки регистрируются сами (`dev.vard.module.*`) |
+| Push and its handling | `on pushReceived(m)`, `on pushOpened(m)`, `getPushToken`, `showNotification` | FCM (`firebase` package), background notifications, open on tap (including cold start) |
+| Permissions | `permissionStatus`, `requestPermission(.camera, s => ...)`, `.blocked` → `openAppSettings()` | runtime permissions, "don't ask again" handled |
+| Preferences | `pref theme = "light"` — state kept across launches; `prefGet/prefSet` | SharedPreferences |
+| Keychain | `secureGet/secureSet/secureRemove` | AES-256-GCM, key in the Android Keystore |
+| Edge-to-edge | drawn under the system bars; `safeArea: .top/.bottom/...`, `safeArea.top`, `keyboardHeight` | bar, cutout and keyboard insets; the focused `Input` scrolls above the keyboard |
+| Predictive back | `on back if stack.count > 1 { ... }`, `backProgress` for animation | `OnBackAnimationCallback` (API 34+), the system back-to-home animation when the app does not intercept |
+| Any design | shadows, gradients, per-corner radii, `Grid`, `Row(wrap:)`, weights 100–900, project fonts, letter spacing, offset/scale, clip | the same frame drawn with Canvas; text measured by the platform shaper |
+| Native SDKs | `extern fn` / `extern event`, data = structs/enums/lists/maps | `vard bindings --kotlin` → typed base class; module libraries register themselves (`dev.vard.module.*`) |
 
-Оболочка iOS, GPU-рендер, анимации и компиляция в байткод — в
-[дорожной карте](docs/architecture.md#дорожная-карта).
+The iOS shell, a GPU renderer, animations and bytecode compilation are on the
+[roadmap](https://vardemin.github.io/vardui/architecture.html#roadmap).
 
-## Быстрый старт
+## Quick start
 
 ```bash
 cargo build --release
@@ -65,46 +67,47 @@ cargo build --release
 cd myapp && ../target/release/vard run && ../target/release/vard test
 ```
 
-Для Claude Code / любых MCP-клиентов: `vard new` создаёт `.mcp.json` с сервером
-`vard mcp` (инструменты `vard_check`, `vard_run`, `vard_screenshot`, `vard_test`,
-`vard_doc`, `vard_explain`, `vard_search`, `vard_info`, `vard_add`, `vard_update`, `vard_api`,
-`vard_publish_check`, `vard_bindings`).
+For Claude Code / any MCP client: `vard new` creates `.mcp.json` with the `vard mcp` server
+(tools `vard_check`, `vard_run`, `vard_screenshot`, `vard_test`, `vard_doc`, `vard_explain`,
+`vard_search`, `vard_info`, `vard_add`, `vard_update`, `vard_api`, `vard_publish_check`,
+`vard_bindings`).
 
-«Сделай в стиле Tailwind»: `vard add tailwind` добавляет палитру, семантические токены с
-тёмной темой и компоненты; таблица соответствия классов и пропсов — `vard doc design`.
-Firebase: `vard add firebase --allow native` и `google-services.json` для Android.
+"Make it look like Tailwind": `vard add tailwind` adds the palette, semantic tokens with a
+dark theme and components; the class → prop mapping is `vard doc design`.
+Firebase: `vard add firebase --allow native` plus `google-services.json` for Android.
 
-## Пакеты, рассчитанные на агентов
+## Packages built for agents
 
 ```bash
-vard search bar chart       # поиск по именам, ключевым словам, описаниям и экспортам
-vard info charts            # версии, возможности, API, тесты — до установки
-vard add charts             # только точные имена; vard.toml + vard.lock
-vard update --major         # API-дифф; затем `vard check --fix` применяет миграции пакета
-vard registry init ./reg && vard registry serve ./reg   # свой реестр: статика + API публикации
-vard publish ./charts --registry ./reg --token …        # гейт: компиляция, тесты, semver, возможности
+vard search bar chart       # search names, keywords, summaries and exported names
+vard info charts            # versions, capabilities, API, tests — before installing
+vard add charts             # exact names only; vard.toml + vard.lock
+vard update --major         # API diff; then `vard check --fix` applies the package's migrations
+vard registry init ./reg && vard registry serve ./reg   # your own registry: static files + publish API
+vard publish ./charts --registry ./reg --token …        # the gate: compile, tests, semver, capabilities
 ```
 
-Пакет = код + **контракт, который вычисляет компилятор** (публичный API и возможности:
-secure, push, native, network…) + AGENT.md для агентов + тесты, прогнанные при публикации.
-Semver принудителен (API-дифф), чувствительные возможности одобряет человек в `[policy]`,
-угаданное имя не установится, реестр — статические файлы с подписанным журналом, которые
-можно раздавать с любого CDN. Подробно — [docs/packages](docs/packages/README.md).
+A package = code + **a contract the compiler computes** (public API and capabilities:
+secure, push, native, network…) + AGENT.md for agents + tests run at publish time. Semver is
+enforced (API diff), a person approves sensitive capabilities in `[policy]`, a guessed name
+never installs, and a registry is static files with a signed log that any CDN can serve.
+Details: [packages overview](https://vardemin.github.io/vardui/packages/).
 
-## Почему это удобно для LLM — в цифрах (examples/todo)
+## Why this suits LLMs — in numbers (examples/todo)
 
-| Операция | Стоимость |
+| Operation | Cost |
 |---|---|
-| весь справочник языка (`vard doc`) | ~12 KB ≈ 3k токенов, один раз за сессию |
-| экран целиком (`tree`) | ~400 байт ≈ 110 токенов (скриншот того же экрана ≈ 450–1600) |
-| результат действия (`tap`) | ~100 байт: только изменившиеся строки дерева |
-| `vard check` | ~18 мс; ошибки с готовым `fix:` применяются `--fix` без участия модели |
-| headless-запуск + сценарий | ~50–100 мс, детерминированно, без эмулятора |
+| the whole language reference (`vard doc`) | ~12 KB ≈ 3k tokens, once per session |
+| the whole screen (`tree`) | ~400 bytes ≈ 110 tokens (a screenshot of the same screen ≈ 450–1600) |
+| the result of an action (`tap`) | ~100 bytes: only the tree lines that changed |
+| `vard check` | ~18 ms; errors with a ready `fix:` are applied by `--fix` without the model |
+| headless run + script | ~50–100 ms, deterministic, no emulator |
 
-Документация — [docs/](docs/README.md): быстрый старт, язык, интерфейс, реактивность,
-платформа, тестирование, инструменты, диагностики, пакеты и реестры, архитектура и ADR.
+Documentation — https://vardemin.github.io/vardui/: getting started, language, UI,
+reactivity, platform, testing, tooling, diagnostics, packages and registries, architecture
+and ADRs.
 
-## Разработка самого фреймворка
+## Developing the framework itself
 
 ```bash
 cargo test --workspace
@@ -114,7 +117,11 @@ cargo test --workspace
 for e in examples/* packages/*; do ./target/release/vard test $e; done
 ```
 
-Rust 1.98 (`rust-toolchain.toml`). Зависимости рантайма: `slotmap`, `fontdue`,
-`tiny-skia`, `dejavu` (встроенный шрифт для детерминированного layout), `serde_json`
-(нативный мост); FFI: `jni`; пакеты: `sha2`, `ed25519-dalek`, `getrandom` (HTTPS — через
-системный `curl`).
+```bash
+mdbook serve        # the documentation site, from docs/ (book.toml)
+```
+
+Rust 1.98 (`rust-toolchain.toml`). Runtime dependencies: `slotmap`, `fontdue`,
+`tiny-skia`, `dejavu` (bundled font for deterministic layout), `serde_json` (native
+bridge); FFI: `jni`; packages: `sha2`, `ed25519-dalek`, `getrandom` (HTTPS goes through the
+system `curl`).

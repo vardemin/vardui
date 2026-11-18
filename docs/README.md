@@ -1,52 +1,54 @@
-# Документация VardUI
+# VardUI documentation
 
-VardUI — кроссплатформенный UI-фреймворк, у которого основной «разработчик» — LLM-агент:
-язык **Vard**, fine-grained реактивный рантайм, headless-симулятор платформы, тулинг с
-машинно-применимыми исправлениями и система пакетов, рассчитанная на то, что зависимости
-добавляет модель, а одобряет человек.
+VardUI is a cross-platform UI framework whose primary "developer" is an LLM agent: the
+**Vard** language, a fine-grained reactive runtime, a headless platform simulator, tooling
+with machine-applicable fixes, and a package system designed for a world where a model adds
+dependencies and a person approves them.
 
-Документы для людей — на русском. Справочники для агентов (на английском) встроены в бинарник
-и доступны командой `vard doc` (исходники — в [`knowledge/`](../knowledge)).
+These pages are for people. The references for agents are compiled into the `vard` binary
+and printed by `vard doc` (sources in
+[`knowledge/`](https://github.com/vardemin/vardui/tree/master/knowledge)).
 
-## С чего начать
+## Start here
 
-| Документ | О чём |
+| Page | What it covers |
 |---|---|
-| [Быстрый старт](getting-started.md) | установка, первый проект, цикл «правка → проверка → запуск → тест» |
-| [Работа с ИИ-агентами](ai-first.md) | как устроен AI-first подход, AGENTS.md, скиллы, MCP, бюджет токенов |
+| [Getting started](getting-started.md) | install, first project, the "edit → check → run → test" loop |
+| [Working with AI agents](ai-first.md) | how the AI-first approach works: AGENTS.md, skills, MCP, token budget |
 
-## Руководство
+## Guide
 
-| Документ | О чём |
+| Page | What it covers |
 |---|---|
-| [Язык Vard](language.md) | типы, объявления, виды, UI-дерево, выражения, изменяемость, функции |
-| [Интерфейс: элементы, раскладка, стиль](ui.md) | встроенные элементы, flex/grid, общие props, токены, темы, тёмный режим |
-| [Реактивность и модель исполнения](reactivity.md) | signals/computed/effects, keyed-списки, правила чистоты рендера |
-| [Платформа и нативные модули](platform.md) | жизненный цикл, back, insets, разрешения, хранилища, пуши, `extern fn`/`extern event` |
-| [Тестирование и отладка](testing.md) | headless-запуск, язык действий, `.vtest`, `why`, линты, симулятор платформы |
-| [Инструменты: CLI и MCP](tooling.md) | все команды `vard`, MCP-сервер, форматы вывода |
-| [Диагностики](diagnostics.md) | коды E/W/R/L/P, как читать и исправлять |
+| [The Vard language](language.md) | types, declarations, views, the UI tree, expressions, mutability, functions |
+| [UI: elements, layout, style](ui.md) | built-in elements, flex/grid, common props, tokens, themes, dark mode |
+| [Reactivity and execution model](reactivity.md) | signals/computed/effects, keyed lists, rules for pure rendering |
+| [Platform and native modules](platform.md) | lifecycle, back, insets, permissions, storage, push, `extern fn`/`extern event` |
+| [Testing and debugging](testing.md) | headless runs, the action language, `.vtest`, `why`, lints, the platform simulator |
+| [Tooling: CLI and MCP](tooling.md) | every `vard` command, the MCP server, output formats |
+| [Diagnostics](diagnostics.md) | E/W/R/L/P codes, how to read and fix them |
 
-## Пакеты, реестры и доставка
+## Packages, registries and delivery
 
-| Документ | О чём |
+| Page | What it covers |
 |---|---|
-| [Обзор системы пакетов](packages/README.md) | идея и ключевые решения: контракт, вычисляемый компилятором |
-| [Использование пакетов](packages/using.md) | `vard search/add/update`, vard.toml, vard.lock, пространства имён, политика возможностей |
-| [Создание пакета](packages/authoring.md) | структура, манифест, AGENT.md, пример-доказательство, миграции, нативный код, публикация |
-| [Реестры и хостинг](packages/registry.md) | протокол, форматы файлов, `vard registry serve`, CDN, реестр в git, приватные реестры |
-| [Доставка на устройства](packages/delivery.md) | `vard bundle`, нативный отпечаток, Android, обновления по воздуху |
-| [Модель безопасности](packages/security.md) | угрозы (в т. ч. специфичные для LLM) и защиты |
+| [Package system overview](packages/) | the idea and key decisions: a contract computed by the compiler |
+| [Using packages](packages/using.md) | `vard search/add/update`, vard.toml, vard.lock, namespaces, the capability policy |
+| [Writing a package](packages/authoring.md) | layout, manifest, AGENT.md, the example as proof, migrations, native code, publishing |
+| [Registries and hosting](packages/registry.md) | protocol, file formats, `vard registry serve`, CDNs, registries in git, private registries |
+| [Delivery to devices](packages/delivery.md) | `vard bundle`, the native fingerprint, Android, over-the-air updates |
+| [Security model](packages/security.md) | threats (including LLM-specific ones) and defenses |
 
-## Платформы и архитектура
+## Platforms and architecture
 
-| Документ | О чём |
+| Page | What it covers |
 |---|---|
-| [Архитектура](architecture.md) | слои, решения, дорожная карта |
-| [Android-оболочка](../platforms/android/README.md) | сборка, свойства Gradle, нативные модули |
-| [ADR](adr/) | записи архитектурных решений 0001–0007 |
+| [Architecture](architecture.md) | layers, decisions, roadmap |
+| [Android shell](android.md) | build, Gradle properties, native modules |
+| [ADRs](adr/) | architecture decision records 0001–0007 |
 
-## Разработка самого фреймворка
+## Developing the framework
 
-См. [CLAUDE.md](../CLAUDE.md) (правила для агентов, работающих над фреймворком) и раздел
-«Разработка» в [README](../README.md).
+See [CLAUDE.md](https://github.com/vardemin/vardui/blob/master/CLAUDE.md) (rules for agents
+working on the framework) and "Developing the framework itself" in the
+[README](https://github.com/vardemin/vardui#developing-the-framework-itself).

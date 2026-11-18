@@ -1,27 +1,28 @@
-# ADR-0007: Статический реестр, адресуемый содержимым, с подписанным журналом
+# ADR-0007: A static, content-addressed registry with a signed log
 
-**Статус:** принято
+**Status:** accepted
 
-**Контекст.** Реестр должен быть дешёвым в хостинге (команде, компании, сообществу), работать
-за любым CDN и через зеркала, а доверие к пакетам не должно зависеть от того, кто их раздаёт.
-Серверная логика чтения (поиск, разрешение версий) усложняет зеркалирование и масштабирование.
+**Context.** A registry must be cheap to host (for a team, a company, a community), work
+behind any CDN and through mirrors, and trust in packages must not depend on who serves
+them. Server-side read logic (search, version resolution) complicates mirroring and scaling.
 
-**Решение.**
-1. Протокол чтения — статические файлы: `config.json`, `catalog.json` (поиск выполняет
-   клиент), `index/NAME.json` (JSON-строки, только дописываются), `blobs/SHA256.vpk`
-   (неизменяемые, кэшируются навсегда).
-2. Архив `.vpk` детерминирован (отсортированные пути, без метаданных), поэтому хеш
-   воспроизводим.
-3. Журнал публикаций — хеш-цепочка `log.txt`, голова подписана ed25519 (`log.head`). Клиент
-   закрепляет ключ при первом контакте, проверяет подпись, цепочку, префиксность относительно
-   увиденной ранее головы и наличие каждой устанавливаемой версии в журнале.
-4. Запись — в одном месте и через один гейт: `vard publish --registry DIR`, CI над git-
-   репозиторием реестра или `vard registry serve` (HTTP API публикации по токену).
-5. HTTPS — через системный `curl`, чтобы бинарник не нёс TLS-стек; целостность от транспорта
-   не зависит.
+**Decision.**
+1. The read protocol is static files: `config.json`, `catalog.json` (the client searches),
+   `index/NAME.json` (JSON lines, append-only), `blobs/SHA256.vpk` (immutable, cached
+   forever).
+2. The `.vpk` archive is deterministic (sorted paths, no metadata), so the hash is
+   reproducible.
+3. The publication log is a hash chain `log.txt` whose head is signed with ed25519
+   (`log.head`). A client pins the key on first contact and checks the signature, the chain,
+   that the previously seen head is a prefix, and that every installed version is in the log.
+4. Writes happen in one place and through one gate: `vard publish --registry DIR`, CI over a
+   git repository holding the registry, or `vard registry serve` (an HTTP publish API with
+   tokens).
+5. HTTPS goes through the system `curl`, so the binary carries no TLS stack; integrity does
+   not depend on the transport.
 
-**Последствия.** + реестр — каталог, раздаваемый чем угодно; зеркала не нуждаются в доверии;
-подмена архива, индекса или истории обнаруживается клиентом; один гейт для всех путей
-публикации. − полный журнал скачивается клиентом (для крупных реестров — Merkle-деревья и
-доказательства включения в дорожной карте); заморозку обновлений зеркалом обнаруживает только
-сравнение с другим источником.
+**Consequences.** + a registry is a directory served by anything; mirrors need no trust;
+substitution of an archive, the index or the history is detected by the client; one gate for
+every publishing path. − the client downloads the full log (for large registries, Merkle
+trees and inclusion proofs are on the roadmap); a mirror withholding updates is detectable
+only by comparing with another source.

@@ -34,4 +34,7 @@ packages bundled into the binary as the `builtin` registry (`vard-pkg/build.rs`)
 - When language behaviour changes, update `knowledge/llms.txt`, `design.md`/`native.md`/
   `packages.md` and the skills in the same change; keep skill snippets compiling in
   `examples/patterns`.
-- Human docs (README, docs/) are in Russian; agent docs (knowledge/) in English.
+- All docs are in English. Human docs: README and `docs/` — an mdBook site (`book.toml`,
+  `docs/SUMMARY.md`) published to https://vardemin.github.io/vardui/ by
+  `.github/workflows/docs.yml`; add new pages to `docs/SUMMARY.md`, and link files outside
+  `docs/` with absolute GitHub URLs. Agent docs: `knowledge/` (compiled into the binary).

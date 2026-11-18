@@ -482,7 +482,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     let (n, _) = self.ident("handler parameter name")?;
-                    // tolerate `msg: PushMessage` вЂ” the type comes from the event declaration
+                    // tolerate `msg: PushMessage` — the type comes from the event declaration
                     if self.eat(&Tok::Colon) {
                         self.type_ref()?;
                     }
@@ -1000,7 +1000,7 @@ impl<'a> Parser<'a> {
                 return Ok(e);
             }
             Tok::LBracket => {
-                // `[:]` вЂ” empty map
+                // `[:]` — empty map
                 if *self.peek() == Tok::Colon && *self.peek_at(1) == Tok::RBracket {
                     self.bump();
                     self.bump();

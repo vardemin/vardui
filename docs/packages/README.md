@@ -1,110 +1,114 @@
-# Система пакетов: обзор
+# Package system overview
 
-## Задача
+## The problem
 
-В современных экосистемах (npm, Cargo, Go modules, SwiftPM, pub.dev) пакет — это архив кода
-плюс то, что автор *заявил* о нём: версия, описание, зависимости. Всё остальное — что пакет
-умеет, что сломается при обновлении, можно ли ему доверять — человек выясняет сам, читая код,
-changelog и issues.
+In today's ecosystems (npm, Cargo, Go modules, SwiftPM, pub.dev) a package is an archive of
+code plus what its author *claims* about it: a version, a description, dependencies.
+Everything else — what the package can do, what breaks on upgrade, whether to trust it — a
+person finds out by reading code, changelogs and issues.
 
-В VardUI зависимости в основном добавляет LLM-агент. Для агента у привычной модели три
-системных дефекта:
+In VardUI, dependencies are mostly added by an LLM agent. For an agent the usual model has
+three systemic defects:
 
-1. **Галлюцинации имён.** Модели уверенно «вспоминают» несуществующие пакеты; злоумышленники
-   регистрируют такие имена («slopsquatting»). Установка по угаданному имени — классический
-   путь атаки.
-2. **Заявления вместо фактов.** Semver соблюдается на честном слове; changelog пишут для
-   людей; что пакет делает с устройством, нигде не записано. Агент не может проверить ни одно
-   из этого дешевле, чем прочитать весь код.
-3. **Дорогое знание.** Чтобы начать пользоваться пакетом, агент читает README на тысячи
-   токенов, а после обновления — угадывает, что переименовали.
+1. **Hallucinated names.** Models confidently "remember" packages that do not exist, and
+   attackers register those names ("slopsquatting"). Installing by a guessed name is a
+   classic attack path.
+2. **Claims instead of facts.** Semver is an honor system; changelogs are written for
+   people; what a package does with the device is written down nowhere. An agent cannot
+   check any of it more cheaply than by reading all of the code.
+3. **Expensive knowledge.** To start using a package an agent reads a README of thousands of
+   tokens, and after an upgrade it guesses what was renamed.
 
-## Решение: пакет = код + контракт + знание + доказательство
+## The solution: package = code + contract + knowledge + proof
 
-| Часть | Что это | Кто производит |
+| Part | What it is | Who produces it |
 |---|---|---|
-| **Код** | `.vard`-исходники, опционально нативный модуль и ресурсы | автор |
-| **Контракт** | публичный API и **возможности** (capabilities) | **компилятор** — вычисляются из кода, не заявляются |
-| **Знание** | `AGENT.md` ≤ 6 КБ (≈ 1500 токенов) + сгенерированный API + скиллы | автор + компилятор |
-| **Доказательство** | headless-тесты `example/` и пакета, прогнанные реестром при публикации | реестр |
-| **Миграции** | переименования, которые превращаются в `fix:` у потребителей | автор |
-| **Симуляция** | ответы `[sim]` для внешних функций пакета в headless-режиме | автор |
+| **Code** | `.vard` sources, optionally a native module and resources | the author |
+| **Contract** | the public API and **capabilities** | **the compiler** — computed from code, not declared |
+| **Knowledge** | `AGENT.md` ≤ 6 KB (≈ 1500 tokens) + the generated API + skills | the author + the compiler |
+| **Proof** | headless tests of `example/` and the package, run by the registry at publish | the registry |
+| **Migrations** | renames that become `fix:`es for consumers | the author |
+| **Simulation** | `[sim]` answers for the package's externs in headless mode | the author |
 
-Из этого следуют свойства, которых нет у классических менеджеров:
+This gives properties classic package managers do not have:
 
-- **Semver принудителен.** Компилятор сравнивает API новой версии с предыдущей: удаление или
-  изменение — major, добавление — minor, прочее — patch. Реестр не примет 1.0.1, если API
-  сломан (`P015`), и подскажет минимальную допустимую версию.
-- **Возможности — факт, а не обещание.** Компилятор видит, что код вызывает `secureGet`,
-  объявляет `extern fn`, подписан на `pushReceived` или грузит `https://`. Манифест обязан
-  совпадать с вычисленным (`P013`); потребитель обязан одобрить чувствительные возможности в
-  `[policy]` (`P008`); `vard.lock` записывает их, поэтому новая возможность в зависимости —
-  это строка в диффе код-ревью.
-- **Обновление — механическое.** `vard update` печатает API-дифф, `vard check --fix`
-  применяет миграции пакета к коду приложения (`E0234`). Агенту не нужно читать changelog.
-- **Установка не угадывает.** `vard add` ставит только точные имена; на опечатку — «did you
-  mean» из реального индекса (`P001`). Реестр не даёт зарегистрировать имя в одной правке от
-  чужого существующего (`P010`).
-- **Знание дёшево и ограничено.** `vard doc` показывает пакеты проекта по строке на пакет;
-  `vard doc NAME` — `AGENT.md` и сгенерированный API. Бюджет документа проверяется при
-  публикации (`P011`). Блок пакетов в `AGENTS.md` проекта обновляется при установке — агент
-  видит зависимости без единого вызова инструмента.
-- **Пакет проверяем без устройства.** Тесты гоняются headless при публикации; `[sim]` даёт
-  потребителю работающий `vard run` сразу после `vard add` даже для пакетов с нативным кодом.
+- **Semver is enforced.** The compiler compares the new version's API with the previous
+  one: removing or changing something is major, adding is minor, anything else is a patch.
+  The registry will not accept 1.0.1 with a broken API (`P015`) and suggests the minimal
+  acceptable version.
+- **Capabilities are facts, not promises.** The compiler sees the code call `secureGet`,
+  declare an `extern fn`, subscribe to `pushReceived` or load `https://`. The manifest must
+  match what was computed (`P013`); the consumer must approve sensitive capabilities in
+  `[policy]` (`P008`); `vard.lock` records them, so a new capability in a dependency is a
+  line in a code-review diff.
+- **Upgrades are mechanical.** `vard update` prints the API diff, and `vard check --fix`
+  applies the package's migrations to the app's code (`E0234`). The agent does not read a
+  changelog.
+- **Installation never guesses.** `vard add` installs exact names only; a typo gets "did you
+  mean" from the real index (`P001`). The registry refuses a name one edit away from an
+  existing name of another owner (`P010`).
+- **Knowledge is cheap and bounded.** `vard doc` shows the project's packages one line
+  each; `vard doc NAME` shows `AGENT.md` and the generated API. The document budget is
+  checked at publish (`P011`). The package block in the project's `AGENTS.md` is updated on
+  install, so an agent sees the dependencies without a single tool call.
+- **A package is verifiable without a device.** Tests run headless at publish; `[sim]` gives
+  consumers a working `vard run` right after `vard add`, even for packages with native code.
 
-## Пространства имён без импортов
+## Namespaces without imports
 
-Язык намеренно без импортов ([ADR-0001](../adr/0001-own-language.md)): одна форма записи, ни
-одной строки, в которой модель может ошибиться путём. Пакеты это сохраняют:
+The language deliberately has no imports ([ADR-0001](../adr/0001-own-language.md)): one form
+of writing, no line where a model can get a path wrong. Packages keep that:
 
-1. имя без квалификации ищется в своём пакете (приложение — тоже пакет), затем в **прямых**
-   зависимостях, затем в std;
-2. собственные объявления всегда побеждают пакетные;
-3. если имя экспортируют две прямые зависимости — `E0231`, пишется `pkg.Name`;
-4. транзитивные зависимости невидимы (`E0232`), имена на `_` приватны (`E0230`);
-5. имена `extern fn/event` глобальны — их вызывает платформа (`E0233`).
+1. an unqualified name is looked up in its own package (the app is a package too), then in
+   **direct** dependencies, then in std;
+2. your own declarations always win over packages;
+3. if two direct dependencies export a name — `E0231`, write `pkg.Name`;
+4. transitive dependencies are invisible (`E0232`), `_` names are private (`E0230`);
+5. `extern fn/event` names are global — the platform calls them (`E0233`).
 
-Итог: добавление или обновление одного пакета **не может изменить смысл** чужого кода.
-Компилятор переименовывает конфликтующие объявления в `pkg.Name` до проверки типов, поэтому
-рантайм и инспекция ничего не знают о пакетах. Подробности — [using.md](using.md#пространства-имён),
-реализация — `crates/vard-lang/src/link.rs`.
+The result: adding or upgrading one package **cannot change the meaning** of anyone else's
+code. The compiler renames conflicting declarations to `pkg.Name` before type checking, so
+the runtime and inspection know nothing about packages. Details:
+[Using packages](using.md#namespaces); implementation: `crates/vard-lang/src/link.rs`.
 
-## Разрешение версий: minimal version selection
+## Version resolution: minimal version selection
 
-Требование — минимум на линии совместимости (`"1.4"` = ≥ 1.4.0, < 2.0.0). Для каждого пакета
-выбирается **наибольший из минимумов**, которые кто-либо требует ([ADR-0006](../adr/0006-minimal-version-selection.md)).
-Без SAT-решателя, без «latest»: результат зависит только от манифестов — сегодня, завтра и в
-CI. Lock-файл ничего не решает, он закрепляет хеши и записывает возможности. Одна версия
-пакета на приложение (общее пространство имён), несовместимые линии — `P006`.
+A requirement is a minimum on a compatibility line (`"1.4"` = ≥ 1.4.0, < 2.0.0). For each
+package the **largest of the minimums** anyone requires is selected
+([ADR-0006](../adr/0006-minimal-version-selection.md)). No SAT solver, no "latest": the result
+depends only on the manifests — today, tomorrow and in CI. The lockfile decides nothing; it
+pins hashes and records capabilities. One version of a package per app (a shared
+namespace); incompatible lines are `P006`.
 
-## Хостинг: статический, адресуемый содержимым, подписанный
+## Hosting: static, content-addressed, signed
 
-Реестр — набор статических файлов ([ADR-0007](../adr/0007-static-signed-registry.md)):
-`config.json`, `catalog.json`, `index/NAME.json`, `blobs/SHA256.vpk`, подписанный журнал
-`log.txt` + `log.head`. Его можно раздавать с любого CDN, бакета, GitHub Pages или каталога;
-`vard registry serve` добавляет API публикации. Клиент закрепляет ключ реестра при первом
-контакте, проверяет подпись и хеш-цепочку журнала, а затем — хеш каждого архива. Доверие
-не зависит от хоста: зеркало может задержать обновление, но не подменить опубликованное.
-Подробно — [registry.md](registry.md), угрозы — [security.md](security.md).
+A registry is a set of static files ([ADR-0007](../adr/0007-static-signed-registry.md)):
+`config.json`, `catalog.json`, `index/NAME.json`, `blobs/SHA256.vpk`, and a signed log
+`log.txt` + `log.head`. Any CDN, bucket, GitHub Pages or directory can serve it;
+`vard registry serve` adds a publish API. A client pins the registry key on first contact,
+verifies the signature and the log's hash chain, and then the hash of every archive. Trust
+does not depend on the host: a mirror can delay an update but cannot substitute what was
+published. Details: [Registries and hosting](registry.md); threats: [Security model](security.md).
 
-## Доставка на устройства
+## Delivery to devices
 
-`vard bundle` собирает всё, что исполняет устройство: исходники приложения и пакетов
-(`@name/...`), `vard.lock`, ресурсы и `bundle.json` с хешем и **нативным отпечатком** —
-списком внешних функций и нативных модулей. Android-оболочка вызывает `vard bundle` при
-сборке и подключает нативные модули пакетов автоматически. Отпечаток — ключ совместимости
-для обновлений по воздуху: интерпретируемый бандл можно доставить без пересборки APK, если
-нативная часть не изменилась. Подробно — [delivery.md](delivery.md).
+`vard bundle` collects everything a device executes: the app's and packages' sources
+(`@name/...`), `vard.lock`, resources, and `bundle.json` with a hash and a **native
+fingerprint** — the list of externs and native modules. The Android shell runs
+`vard bundle` during the build and includes the packages' native modules automatically. The
+fingerprint is the compatibility key for over-the-air updates: an interpreted bundle can be
+delivered without rebuilding the APK as long as the native part did not change. Details:
+[Delivery to devices](delivery.md).
 
-## Что реализовано, а что — в дорожной карте
+## What is implemented and what is on the roadmap
 
-| Реализовано (v0.2) | Дорожная карта |
+| Implemented (v0.3) | Roadmap |
 |---|---|
-| vard.toml, vard.lock, MVS, пути и реестры как источники | git-источники зависимостей |
-| компоновщик пространств имён, `pkg.Name`, приватность, миграции | миграции типов полей и переименования enum-вариантов |
-| API и возможности, вычисляемые компилятором; принудительный semver | проверка совместимости поведения по тестам предыдущей версии |
-| гейт публикации: компиляция, возможности, тесты, semver, бюджет AGENT.md, имя | карантин новых пакетов, аттестации сборки (provenance) |
-| статический реестр, подписанный журнал, закрепление ключа, проверка префикса | Merkle-доказательства включения вместо полного журнала; ротация ключей |
-| `vard registry serve` с публикацией по токену, yank | веб-интерфейс, организации и роли |
-| встроенный реестр `builtin` (tailwind, firebase) | официальный публичный реестр |
-| `vard bundle` с нативным отпечатком; автоподключение нативных модулей на Android | клиент OTA-обновлений в Android/iOS-хостах; iOS-модули пакетов |
+| vard.toml, vard.lock, MVS, paths and registries as sources | git sources for dependencies |
+| namespace linker, `pkg.Name`, privacy, migrations | migrations of field types and enum variant renames |
+| API and capabilities computed by the compiler; enforced semver | behavioral compatibility checks with the previous version's tests |
+| publish gate: compile, capabilities, tests, semver, AGENT.md budget, name | quarantine for new packages, build attestations (provenance) |
+| static registry, signed log, key pinning, prefix check | Merkle inclusion proofs instead of the full log; key rotation |
+| `vard registry serve` with token-based publishing, yank | web UI, organizations and roles |
+| the `builtin` registry (tailwind, firebase) | an official public registry |
+| `vard bundle` with the native fingerprint; automatic native modules on Android | an OTA update client in the Android/iOS hosts; iOS modules in packages |
