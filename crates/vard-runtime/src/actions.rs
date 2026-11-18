@@ -29,6 +29,7 @@ actions (one per line, or separated by `;`):
   expect SEL|\"text\"    fail unless present;   expect no \"text\"   fail if present
   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
   theme light|dark     switch the system theme        size W H    resize the screen
+  locale TAG           the user's language (en, ru, pt-BR): t() texts follow it
   insets T B [L R]     system bar/cutout insets in dp     keyboard H   show the keyboard (0 hides)
   mock NAME VALUE      `extern fn NAME` returns VALUE (JSON or bare word) and its callbacks receive it
   resolve NAME VALUE   complete the oldest pending call of NAME (callback extern without a mock)
@@ -238,6 +239,11 @@ impl Runtime {
                     _ => return Err("usage: theme light|dark".into()),
                 }
                 Ok(ActionOut::Text(String::new()))
+            }
+            "locale" => {
+                let tag = toks.get(1).ok_or("usage: locale TAG (e.g. locale ru)")?;
+                self.set_locale(tag);
+                Ok(ActionOut::Mutated)
             }
             "size" => {
                 let w: f32 = toks.get(1).and_then(|s| s.parse().ok()).ok_or("usage: size W H")?;

@@ -15,6 +15,7 @@ pub mod log;
 pub mod lock;
 pub mod manifest;
 pub mod net;
+pub mod ota;
 pub mod project;
 pub mod registry;
 pub mod resolve;

@@ -666,6 +666,7 @@ name = "vard-cli"
 version = "0.3.0"
 dependencies = [
  "serde_json",
+ "vard-ffi",
  "vard-lang",
  "vard-pkg",
  "vard-runtime",
@@ -678,6 +679,7 @@ dependencies = [
  "jni",
  "serde_json",
  "vard-lang",
+ "vard-pkg",
  "vard-runtime",
 ]
 

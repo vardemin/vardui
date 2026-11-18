@@ -27,3 +27,8 @@ jobs:
         run: |
           cargo build --release -p vard-cli
           for e in examples/* packages/*; do ./target/release/vard test "$e"; done
+      - name: Swift bindings typecheck
+        if: runner.os == 'macOS'
+        run: |
+          ./target/release/vard bindings packages/firebase --swift --class FirebaseModule --out "$RUNNER_TEMP/FirebaseModule.swift"
+          swiftc -typecheck "$RUNNER_TEMP/FirebaseModule.swift"

@@ -152,20 +152,24 @@ devices:
    release — compilation to a compact register bytecode or AOT to Rust; type checks are
    already static, so runtime checks go away.
 4. **Native modules.** *Done:* `extern fn` with callbacks, `extern event` + `on`, the std
-   platform (permissions, push, prefs, secure storage, back, insets), `vard bindings --kotlin`,
-   self-registering module libraries, Firebase as a package with a native module, automatic
-   inclusion of packages' native modules in the Android build. Next: Swift generation,
-   `async/await` sugar over callbacks.
-5. **Language.** *Done:* `Map`, `pref`, `Grid`, wrap, shadows/gradients/fonts. Next:
-   navigation as a built-in element (today a stack + `on back` pattern), animations
-   (`animate:` on props — interpolation in the effect layer without re-running logic),
-   gestures, virtualized long lists, image loading, i18n, storage.
+   platform (permissions, push, prefs, secure storage, back, insets), `vard bindings --kotlin`
+   and `--swift` (the Swift output is type-checked by `swiftc` in CI), self-registering module
+   libraries, Firebase as a package with a native module, automatic inclusion of packages'
+   native modules in the Android build. Next: `async/await` sugar over callbacks.
+5. **Language.** *Done:* `Map`, `pref`, `Grid`, wrap, shadows/gradients/fonts, localized text
+   (`strings` tables, `t()`, the `locale` global — checked at compile time). Next: navigation
+   as a built-in element (today a stack + `on back` pattern), animations (`animate:` on props —
+   interpolation in the effect layer without re-running logic; needs a frame clock from the
+   host), gestures, virtualized long lists, image caching.
 6. **Accessibility.** The semantic tree exists — mapping it to TalkBack/VoiceOver.
-7. **On-device inspection.** The same action protocol over a WebSocket from the device to
-   `vard`: the MCP tools work against a real device unchanged.
+7. **On-device inspection.** *Done:* the action protocol over TCP (`vard run --device`), a
+   listener in `vard-ffi` that runs scripts on the UI thread, enabled in debuggable Android
+   builds. Next: a `device` parameter for the MCP tools.
 8. **Packages.** *Done:* vard.toml/vard.lock, MVS, the namespace linker, API and capabilities
    from the compiler, enforced semver, migrations, the publish gate, a static signed registry,
-   `vard registry serve`, `vard bundle` with the native fingerprint. Next: an OTA update
-   client in the hosts, Merkle inclusion proofs and registry key rotation, build
-   attestations, quarantine for new packages, git sources, an official public registry (see
+   `vard registry serve`, `vard bundle` with the native fingerprint, git sources, enum/field
+   migrations, behavioral checks with the previous version's tests, quarantine and provenance,
+   signed key rotation, a web page per registry, the public registry, signed OTA channels with
+   on-device verification (`vard ota`). Next: the OTA download loop in the hosts, Merkle
+   inclusion proofs, Sigstore attestations (see
    [the package overview](packages/#what-is-implemented-and-what-is-on-the-roadmap)).

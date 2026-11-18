@@ -176,6 +176,29 @@ Custom tokens are declared in `theme { }` (light values) and `theme dark { }`.
 `font: "Inter"` in a theme sets the default family (font files go into the project's `fonts/`).
 Details: [UI](ui.md#tokens-and-themes).
 
+## Localized text
+
+```
+strings { hello: "Hello, {name}", items: "{n} items" }      // the default table: the source language
+strings ru { hello: "Привет, {name}", items: "{n} шт." }    // a translation
+view Greeting(name: String, n: Int) {
+  Column {
+    Text(t("hello", ["name": name]))
+    Text(t("items", ["n": "{n}"]))
+  }
+}
+```
+
+- `t(key, [placeholder: value])` returns the text for the current `locale` (a reactive
+  global, e.g. `"ru"`, `"pt-BR"`): the exact language table, else its base language
+  (`pt-BR` → `pt`), else the default table. Changing the locale re-renders exactly the texts
+  that use `t()`.
+- The compiler checks literal keys against the default table (`E0240`, with a fix for typos),
+  placeholders against the default text (`E0241`), and reports missing translations
+  (`W0405`). Placeholders are names (`{n}`), not expressions (`E0242`) — compute values in code.
+- The host sets the locale from the system (Android: the configuration's first locale, also on
+  change); in tests: the `locale ru` action.
+
 ## The platform boundary
 
 `extern fn` is a call into the platform, `extern event` is an event from the platform with a

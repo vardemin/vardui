@@ -69,17 +69,31 @@ checks.
 | a new version of a package without native code | same | yes |
 | a new `extern fn` / `extern event` or a new native module | different | no — needs a new app release |
 
-The scheme (the format and the compatibility check are implemented; the update client in the
-hosts is on the roadmap):
+```bash
+vard ota init ./channel                       # once: prints the channel key to compile into the app
+vard ota publish examples/todo --channel ./channel --version 1.0.1
+```
 
 ```text
-CI:      vard check && vard test && vard bundle --out app-<sha>.vpk
-         → publish to a channel (static hosting, the same principle as a registry):
-           channels/<app>/<native_fingerprint>/latest.json  {sha256, url, signature}
-Device:  at start/in background: GET latest.json for ITS OWN fingerprint
-         → verify the signature and sha256 → store → apply on next launch
-         → if the new bundle fails to compile/mount — roll back to the built-in one
+channel/
+  public/config.json                    {"vard_ota": 1, "key": "<ed25519 public key>"}
+  public/bundles/<sha256>.vpk           immutable bundles
+  public/<native_fingerprint>/latest.json   {"sha256", "size", "version", "published", "sig"}
+  private/ota.key                       the signing key — never publish it
 ```
+
+`latest.json` is signed over `vard-ota/1 <fingerprint> <sha256> <version>`. A device:
+
+1. downloads `<its own fingerprint>/latest.json` and the bundle it names (static hosting, any CDN);
+2. calls `vard_ota_install(latest, bundle, len, key, fingerprint, dir)` (C ABI; Rust
+   `vard_ffi::ota_install`) — it checks the signature with the key compiled into the app, the
+   bundle hash, the fingerprint inside the bundle **and that the sources compile**, then
+   writes the bundle to `dir` atomically; any failure leaves the current bundle in place;
+3. loads `dir` instead of the built-in bundle on the next start.
+
+Implemented: channels, publishing, verification and installation (tested in
+`crates/vard-ffi/tests/ota.rs`). Not yet: the download-and-swap loop inside the Android and iOS
+shells (a few dozen lines of platform code around `vard_ota_install`).
 
 The channel is addressed by the fingerprint, so a device physically cannot receive a bundle
 that needs native code it does not have. For AI-first development this closes the loop: an

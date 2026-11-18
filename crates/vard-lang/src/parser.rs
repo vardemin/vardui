@@ -191,6 +191,7 @@ impl<'a> Parser<'a> {
                 Tok::Extern => self.extern_decl(),
                 Tok::View => self.view_decl(),
                 Tok::Ident(s) if s == "theme" && matches!(self.peek_at(1), Tok::LBrace | Tok::Ident(_)) => self.theme_decl(),
+                Tok::Ident(s) if s == "strings" && matches!(self.peek_at(1), Tok::LBrace | Tok::Ident(_)) => self.strings_decl(),
                 Tok::RBrace => {
                     let sp = self.span();
                     self.bump();
@@ -318,6 +319,53 @@ impl<'a> Parser<'a> {
             self.eat(&Tok::Comma);
         }
         self.prog.themes.push(ThemeDecl { dark, entries, span: start.to(self.prev_span()) });
+        Ok(())
+    }
+
+    /// `strings [lang] { key: "text {placeholder}", ... }`
+    fn strings_decl(&mut self) -> PResult<()> {
+        let start = self.bump().span;
+        let lang = if let Tok::Ident(l) = self.peek().clone() {
+            self.bump();
+            Some(l)
+        } else {
+            None
+        };
+        self.expect(Tok::LBrace, "after `strings` (syntax: `strings ru { key: \"text\" }`)")?;
+        let mut entries = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.eat(&Tok::RBrace) {
+                break;
+            }
+            let (key, sp) = self.ident("string key")?;
+            self.expect(Tok::Colon, "after the string key")?;
+            let e = self.expr()?;
+            let mut parts = Vec::new();
+            match self.prog.expr(e).clone() {
+                Expr::Str(ps) => {
+                    for part in ps {
+                        match part {
+                            StrPart::Lit(s) => parts.push(TPart::Lit(s)),
+                            StrPart::Expr(x) => match self.prog.expr(x).clone() {
+                                Expr::Ident(n) => parts.push(TPart::Param(n)),
+                                _ => {
+                                    let xs = self.prog.span(x);
+                                    self.diags.push(Diag::error("E0242", xs, "a placeholder in `strings` is a name, e.g. `{count}`; pass its value in t(): `t(\"key\", [\"count\": \"{n}\"])`"));
+                                }
+                            },
+                        }
+                    }
+                }
+                _ => {
+                    let es = self.prog.span(e);
+                    self.diags.push(Diag::error("E0242", es, "a `strings` entry is a string literal, e.g. `greeting: \"Hello, {name}\"`"));
+                }
+            }
+            entries.push((key, parts, sp));
+            self.eat(&Tok::Comma);
+        }
+        self.prog.strings.push(StringsDecl { lang, entries, span: start.to(self.prev_span()) });
         Ok(())
     }
 

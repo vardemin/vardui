@@ -240,6 +240,7 @@ pub const GLOBALS: &[(&str, &str, &str)] = &[
     ("screenWidth", "Float", "screen width in dp (responsive layouts: `screenWidth >= 600 ? 3 : 2`)"),
     ("screenHeight", "Float", "screen height in dp"),
     ("platform", "String", "\"android\", \"ios\" or \"headless\""),
+    ("locale", "String", "the user's language as a BCP 47 tag (\"en\", \"ru\", \"pt-BR\"); t() follows it"),
 ];
 
 pub fn global(name: &str) -> Option<(&'static str, &'static str)> {

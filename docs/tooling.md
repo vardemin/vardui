@@ -11,11 +11,12 @@ a project directory (default: the current directory).
 |---|---|
 | `vard check [PATH] [--fix] [--json]` | types; `--fix` applies machine fixes to a fixed point (never touches package files); `--json` — diagnostics as an array |
 | `vard run [PATH] [--do "…"] [--script FILE] [--view V] [--size WxH] [--dark] [--no-lint]` | headless run and an action script |
+| `vard run --device HOST:PORT [--do "…"]` | the same actions against a running debug app (see [Testing](testing.md#on-a-real-device)) |
 | `vard test [PATH]` | every `*.vtest` |
 | `vard doc [TOPIC]` | reference: no topic — the full one (+ the project's packages); topics `elements common actions std errors design native packages`, an element/enum/view/package name |
 | `vard explain CODE` | explains an E/W/R/L/P code |
 | `vard new NAME` | a project with `vard.toml`, a test, AGENTS.md, skills and `.mcp.json` |
-| `vard bindings [PATH] --kotlin [--package P] [--class C] [--out FILE]` | typed Kotlin for the project's `extern fn/event` (excluding packages' externs — they ship their own implementation) |
+| `vard bindings [PATH] --kotlin\|--swift [--package P] [--class C] [--out FILE]` | typed Kotlin base class or Swift protocol (Codable types, `call(name, json)` dispatcher, `emit…` helpers) for the project's `extern fn/event` (excluding packages' externs — they ship their own implementation) |
 
 ## Packages
 
@@ -32,6 +33,7 @@ a project directory (default: the current directory).
 | `vard publish [PATH] --registry DIR\|URL\|NAME [--token T] [--dry-run]` | the gate and publishing |
 | `vard yank NAME@VER --registry DIR [--undo]` | withdraw a version |
 | `vard bundle [PATH] --out DIR\|FILE.vpk` | everything a device needs + `bundle.json` |
+| `vard ota init DIR` / `vard ota publish [PATH] --channel DIR [--version V]` | signed over-the-air update channels keyed by the native fingerprint ([Delivery](packages/delivery.md)) |
 | `vard registry init DIR [--name N]` | create a registry (`public/` + `private/`) |
 | `vard registry token DIR OWNER` | a publish token (shown once) |
 | `vard registry serve DIR [--addr HOST:PORT]` | HTTP hosting of a registry (web page at `/`) with a publish API |

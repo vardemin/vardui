@@ -149,6 +149,8 @@ pub struct Runtime {
     pub root: NodeKey,
     pub(crate) root_scope: ScopeId,
     pub(crate) theme_sig: SigId,
+    /// BCP 47 language tag; t() and the `locale` global follow it
+    pub(crate) locale_sig: SigId,
     pub tokens: HashMap<String, (u32, u32)>,
     pub(crate) consts: HashMap<usize, Value>,
     pub log: Vec<String>,
@@ -233,6 +235,7 @@ impl Runtime {
         let root_scope = scopes.insert(Scope::default());
         let mut sys = |v: Value| signals.insert(Signal { value: v, subs: Vec::new(), name: None, persist: None });
         let theme_sig = sys(Value::Bool(false));
+        let locale_sig = sys(Value::Str(Rc::from("en")));
         let zero_insets = Value::Struct(Rc::new(StructVal {
             name: Rc::from("Insets"),
             fields: ["top", "bottom", "left", "right"].iter().map(|f| (Rc::from(*f), Value::Float(0.0))).collect(),
@@ -290,6 +293,7 @@ impl Runtime {
             keyboard_sig,
             back_sig,
             screen_sig,
+            locale_sig,
             system_dark: false,
             scheme_override: None,
             prefs: HashMap::new(),
@@ -365,6 +369,20 @@ impl Runtime {
             self.persist_prefs();
         }
         self.layout();
+    }
+
+    /// The user's language (`en`, `ru`, `pt-BR`); the host sets it at start and on change.
+    pub fn set_locale(&mut self, tag: &str) {
+        self.sig_set(self.locale_sig, Value::Str(Rc::from(tag)));
+        self.layout_dirty = true;
+        self.settle();
+    }
+
+    pub fn locale(&self) -> String {
+        match &self.signals[self.locale_sig].value {
+            Value::Str(s) => s.to_string(),
+            _ => "en".into(),
+        }
     }
 
     pub fn is_dark(&self) -> bool {

@@ -5,6 +5,7 @@
 //! step. Success is one line. Failures carry file:line, the source line and a fix.
 
 mod bindings;
+mod bindings_swift;
 mod mcp;
 mod pkg;
 mod server;
@@ -32,13 +33,14 @@ vard — AI-first UI framework toolchain
   vard check [PATH] [--fix] [--json]     type-check; --fix applies machine fixes
   vard run [PATH] [--do \"ACTIONS\"] [--script FILE] [--view NAME] [--size WxH] [--dark] [--no-lint]
                                          run headless, drive with actions (default: tree)
+  vard run --device HOST:PORT [--do \"ACTIONS\"]  the same actions against a running debug app
   vard test [PATH]                       run *.vtest files
   vard doc [TOPIC]                       cheat sheet; topics: elements common actions std errors design
                                          native packages <Element> <View> <package>
   vard explain CODE                      explain a diagnostic code (E/W/R/L/P)
   vard new NAME                          scaffold an app with agent instructions, skills and MCP config
-  vard bindings [PATH] --kotlin [--package P] [--class C] [--out FILE]
-                                         typed Kotlin base class for the project's extern fn/event
+  vard bindings [PATH] --kotlin|--swift [--package P] [--class C] [--out FILE]
+                                         typed Kotlin base class / Swift protocol for extern fn/event
 
 packages
   vard search WORDS                      find packages (name, keywords, summary, exported names)
@@ -54,6 +56,8 @@ packages
                                          run the gate (compile, caps, tests, semver, docs) and publish
   vard yank NAME@VER --registry DIR [--undo]
   vard bundle [PATH] --out DIR|FILE.vpk  everything a device needs (+ bundle.json, native fingerprint)
+  vard ota init DIR | publish [PATH] --channel DIR [--version V]
+                                         signed over-the-air update channels, keyed by native fingerprint
   vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr H:P]
                 | rotate-key DIR | verify DIR|URL
 
@@ -79,7 +83,7 @@ fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
 }
 
-const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--owner", "--name", "--addr", "--git", "--tag", "--rev", "--branch", "--dir"];
+const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--owner", "--name", "--addr", "--git", "--tag", "--rev", "--branch", "--dir", "--channel", "--version", "--device"];
 
 /// Arguments that are not flags or flags' values.
 fn positionals(args: &[String]) -> Vec<&str> {
@@ -122,6 +126,13 @@ fn dispatch(args: &[String]) -> (String, bool) {
                 }
             }
             let size = opt(rest, "--size").and_then(parse_size);
+            if let Some(addr) = opt(rest, "--device") {
+                // the same actions against a running app (debug build) instead of headless
+                return match vard_ffi::inspect::request(addr, script.as_deref().unwrap_or("tree")) {
+                    Ok(r) => r,
+                    Err(e) => (e, false),
+                };
+            }
             cmd_run(&RunOpts {
                 path: positional(rest).unwrap_or("."),
                 view: opt(rest, "--view"),
@@ -181,11 +192,13 @@ fn dispatch(args: &[String]) -> (String, bool) {
         },
         "android-modules" => pkg::android_modules(positional(rest).unwrap_or(".")),
         "registry" => pkg::cmd_registry(rest),
+        "ota" => pkg::cmd_ota(rest),
         "bindings" => cmd_bindings(
             positional(rest).unwrap_or("."),
             opt(rest, "--package").unwrap_or("dev.vard.generated"),
             opt(rest, "--class").unwrap_or("AppModule"),
             opt(rest, "--out"),
+            flag(rest, "--swift"),
         ),
         "mcp" => {
             mcp::serve();
@@ -602,7 +615,7 @@ fn cmd_new(name: &str) -> (String, bool) {
     (format!("created {}/ (app.vard, vard.toml, tests/, AGENTS.md, skills, .mcp.json)\nnext: cd {} && vard run && vard test\n", name, name), true)
 }
 
-pub fn cmd_bindings(path: &str, package: &str, class: &str, out: Option<&str>) -> (String, bool) {
+pub fn cmd_bindings(path: &str, package: &str, class: &str, out: Option<&str>, swift: bool) -> (String, bool) {
     let l = match load_project(path) {
         Ok(l) => l,
         Err(e) => return (e, false),
@@ -611,9 +624,12 @@ pub fn cmd_bindings(path: &str, package: &str, class: &str, out: Option<&str>) -
     if c.has_errors() {
         return (format!("{}{}", user_diags(&c), summary(&c, l.files.len())), false);
     }
-    match bindings::kotlin(&c, &bindings::Opts { package, class }) {
+    let opts = bindings::Opts { package, class };
+    let code = if swift { bindings_swift::swift(&c, &opts, |f| bindings::is_module_file(&c, f)) } else { bindings::kotlin(&c, &opts) };
+    match code {
         Ok(code) => match out {
             Some(f) => match std::fs::write(f, &code) {
+                Ok(()) if swift => (format!("wrote {} (adopt `{}` in a class; route the host's extern calls to `call(name, json, host:)`)\n", f, class), true),
                 Ok(()) => (format!("wrote {} (subclass `{}`, register it in VardActivity.modules())\n", f, class), true),
                 Err(e) => (format!("cannot write {}: {}", f, e), false),
             },

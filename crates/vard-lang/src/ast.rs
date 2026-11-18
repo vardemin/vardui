@@ -167,6 +167,40 @@ pub struct ThemeDecl {
     pub span: Span,
 }
 
+/// A piece of a localized string: literal text or a `{placeholder}`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TPart {
+    Lit(String),
+    Param(String),
+}
+
+/// `strings { key: "Hello, {name}" }` (the default language) or `strings ru { ... }`.
+#[derive(Clone, Debug)]
+pub struct StringsDecl {
+    pub lang: Option<String>,
+    pub entries: Vec<(String, Vec<TPart>, Span)>,
+    pub span: Span,
+}
+
+impl StringsDecl {
+    pub fn get(&self, key: &str) -> Option<&Vec<TPart>> {
+        self.entries.iter().find(|e| e.0 == key).map(|e| &e.1)
+    }
+}
+
+/// Placeholders of a template, in order of first appearance.
+pub fn placeholders(t: &[TPart]) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for p in t {
+        if let TPart::Param(n) = p {
+            if !v.contains(n) {
+                v.push(n.clone());
+            }
+        }
+    }
+    v
+}
+
 #[derive(Clone, Debug)]
 pub enum UiNode {
     Element { name: String, name_span: Span, args: Vec<Arg>, children: Vec<UiId>, has_block: bool, span: Span },
@@ -228,6 +262,7 @@ pub struct Program {
     pub events: Vec<EventDecl>,
     pub views: Vec<ViewDecl>,
     pub themes: Vec<ThemeDecl>,
+    pub strings: Vec<StringsDecl>,
     // ---- filled by the checker ----
     pub dot_kinds: HashMap<ExprId, DotKind>,
     pub view_index: HashMap<String, usize>,

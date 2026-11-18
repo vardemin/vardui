@@ -20,6 +20,7 @@
 //! a C ABI (`vard_*`, for Swift/C/C++) and JNI (`dev.vard.host.VardNative`, see [`jni_api`]).
 
 pub mod frame;
+pub mod inspect;
 mod jni_api;
 
 use std::ffi::{c_char, CStr, CString};
@@ -48,6 +49,8 @@ pub struct App {
     compile_diags: String,
     frame: Vec<u8>,
     diag_c: CString,
+    /// scripts from `vard run --device` waiting for the UI thread (see [`App::inspect_listen`])
+    inspector: Option<inspect::Inbox>,
 }
 
 impl App {
@@ -65,7 +68,7 @@ impl App {
             c.program.views.iter().rev().find(|v| v.span.file != 0).map(|v| v.name.clone())
         };
         let rt = if failed { None } else { Some(Runtime::new(c, width.max(1.0), height.max(1.0))) };
-        App { rt, root_view, mounted: false, compile_diags, frame: Vec::new(), diag_c: CString::default() }
+        App { rt, root_view, mounted: false, compile_diags, frame: Vec::new(), diag_c: CString::default(), inspector: None }
     }
 
     pub fn runtime(&self) -> Option<&Runtime> {
@@ -192,6 +195,13 @@ impl App {
         }
     }
 
+    /// The user's language (BCP 47, e.g. `ru`, `pt-BR`): `t()` and `locale` follow it.
+    pub fn set_locale(&mut self, tag: &str) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.set_locale(tag);
+        }
+    }
+
     /// Install the platform's native-module dispatcher. Call before `mount`.
     pub fn set_host(&mut self, host: Box<dyn NativeHost>, platform: &str) {
         if let Some(rt) = self.rt.as_mut() {
@@ -296,6 +306,35 @@ impl App {
     }
 
     /// Compile diagnostics (errors and warnings) followed by runtime errors so far.
+    /// Run an action script (the language of `vard run --do`) against the live app.
+    pub fn run_actions(&mut self, script: &str) -> (String, bool) {
+        match self.live() {
+            Some(rt) => rt.run_script(script),
+            None => ("the app is not running (compile errors?)
+".into(), false),
+        }
+    }
+
+    /// Debug builds: accept action scripts on `addr` (e.g. `127.0.0.1:8472`, reached with
+    /// `adb forward tcp:8472 tcp:8472`). Scripts run on the UI thread in [`App::inspect_poll`].
+    pub fn inspect_listen(&mut self, addr: &str) -> Result<(), String> {
+        self.inspector = Some(inspect::listen(addr)?);
+        Ok(())
+    }
+
+    /// Run the scripts that arrived since the last call; `true` if any ran (redraw).
+    pub fn inspect_poll(&mut self) -> bool {
+        let Some(inbox) = self.inspector.take() else { return false };
+        let mut ran = false;
+        while let Ok(req) = inbox.try_recv() {
+            let (out, ok) = self.run_actions(&req.script);
+            let _ = req.reply.send((out, ok));
+            ran = true;
+        }
+        self.inspector = Some(inbox);
+        ran
+    }
+
     pub fn diagnostics(&self) -> String {
         let mut s = self.compile_diags.clone();
         if let Some(rt) = &self.rt {
@@ -584,6 +623,104 @@ pub unsafe extern "C" fn vard_back_cancel(app: *mut App) {
     guard((), || {
         if let Some(a) = self::app(app) {
             a.back_cancel()
+        }
+    })
+}
+
+// ---------------- over-the-air updates ----------------
+
+/// Verify a downloaded update and install it into `dir` (the app's update directory).
+///
+/// `latest` is the channel's `<fingerprint>/latest.json`, `bundle` the `.vpk` it names,
+/// `key` the channel's public key compiled into the app and `fingerprint` the app's own
+/// native fingerprint (from the `bundle.json` it shipped with). The bundle is accepted only
+/// if the signature, the hash and the fingerprint match **and its sources compile**; then it
+/// is written to `dir` (old files replaced) and its version is returned. On the next start
+/// the host loads `dir` instead of the built-in bundle; on any error it keeps the old one.
+pub fn ota_install(latest: &str, bundle: &[u8], key: &str, fingerprint: &str, dir: &std::path::Path) -> Result<String, String> {
+    let (version, files) = vard_pkg::ota::verify(latest, bundle, key, fingerprint)?;
+    let sources: Vec<(String, String)> = files
+        .iter()
+        .filter(|f| f.0.ends_with(".vard") || f.0 == "vard.lock")
+        .map(|f| (f.0.clone(), String::from_utf8_lossy(&f.1).replace("\r\n", "\n")))
+        .collect();
+    let c = compile(&sources);
+    if c.has_errors() {
+        return Err(format!("the update does not compile; keeping the current bundle:
+{}", c.render_diags()));
+    }
+    let staging = dir.with_extension("incoming");
+    let _ = std::fs::remove_dir_all(&staging);
+    for (rel, bytes) in &files {
+        let p = staging.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::write(&p, bytes).map_err(|e| e.to_string())?;
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::rename(&staging, dir).map_err(|e| format!("cannot install the update: {}", e))?;
+    Ok(version)
+}
+
+/// C ABI for [`ota_install`]: returns NULL on success, else an error message the caller
+/// frees with [`vard_string_free`].
+///
+/// # Safety
+/// String arguments are NUL-terminated UTF-8; `bundle` points to `len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn vard_ota_install(latest: *const c_char, bundle: *const u8, len: usize, key: *const c_char, fingerprint: *const c_char, dir: *const c_char) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        let (Some(l), Some(k), Some(f), Some(d)) = (cstr(latest), cstr(key), cstr(fingerprint), cstr(dir)) else {
+            return CString::new("invalid arguments").unwrap().into_raw();
+        };
+        let bytes = if bundle.is_null() { &[][..] } else { std::slice::from_raw_parts(bundle, len) };
+        match ota_install(l, bytes, k, f, std::path::Path::new(d)) {
+            Ok(_) => std::ptr::null_mut(),
+            Err(e) => CString::new(e.replace('\0', " ")).unwrap_or_default().into_raw(),
+        }
+    })
+}
+
+/// Free a string returned by [`vard_ota_install`].
+///
+/// # Safety
+/// `s` must come from this library (or be NULL).
+#[no_mangle]
+pub unsafe extern "C" fn vard_string_free(s: *mut c_char) {
+    if !s.is_null() {
+        drop(CString::from_raw(s));
+    }
+}
+
+/// C ABI for [`App::inspect_listen`]: 0 on success, -1 on error.
+///
+/// # Safety
+/// `app` from [`vard_create`]; `addr` NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn vard_inspect_listen(app: *mut App, addr: *const c_char) -> i32 {
+    guard(-1, || match (self::app(app), cstr(addr)) {
+        (Some(a), Some(addr)) => a.inspect_listen(addr).map(|_| 0).unwrap_or(-1),
+        _ => -1,
+    })
+}
+
+/// C ABI for [`App::inspect_poll`]: 1 if scripts ran (pull a frame), else 0.
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_inspect_poll(app: *mut App) -> i32 {
+    guard(0, || self::app(app).map(|a| a.inspect_poll() as i32).unwrap_or(0))
+}
+
+/// C ABI for [`App::set_locale`].
+///
+/// # Safety
+/// `app` from [`vard_create`]; `tag` NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn vard_set_locale(app: *mut App, tag: *const c_char) {
+    guard((), || {
+        if let (Some(a), Some(t)) = (self::app(app), cstr(tag)) {
+            a.set_locale(t)
         }
     })
 }

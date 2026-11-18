@@ -140,3 +140,29 @@ view Other {
     assert!(fixed[0].1.contains("on appear {"), "{}", fixed[0].1);
     assert!(fixed[0].1.contains("list.filter(x => { x > 1 })"), "{}", fixed[0].1);
 }
+
+#[test]
+fn localized_strings_are_checked() {
+    let ok = r#"
+strings { hello: "Hello, {name}", items: "{n} items" }
+strings ru { hello: "Привет, {name}", items: "{n} шт." }
+view App {
+  state n = 3
+  Column {
+    Text(t("hello", ["name": "Ann"]))
+    Text(t("items", ["n": "{n}"]))
+  }
+}"#;
+    assert!(diags(ok).is_empty(), "{}", diags(ok));
+    let bad = r#"
+strings { hello: "Hello, {name}" }
+strings ru { helo: "Привет", hello: "Привет, {who}" }
+strings de { }
+view App { Column { Text(t("helo"))
+Text(t("hello")) } }"#;
+    let d = diags(bad);
+    for code in ["E0240", "E0241", "W0405"] {
+        assert!(d.contains(code), "missing {} in:\n{}", code, d);
+    }
+    assert!(d.contains("fix: `\"helo\"` -> `\"hello\"`"), "{}", d);
+}

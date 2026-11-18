@@ -87,9 +87,10 @@ fn tools() -> Value {
         },
         {
             "name": "vard_bindings",
-            "description": "Generate a typed Kotlin base class (data classes, enums, abstract functions, event emitters) for the project's extern fn / extern event declarations. Implement it in Kotlin and return it from VardActivity.modules().",
+            "description": "Generate typed native bindings for the project's extern fn / extern event declarations: a Kotlin base class (data classes, enums, abstract functions, event emitters; return it from VardActivity.modules()) or, with language=swift, a Swift protocol with Codable types, a call(name, json) dispatcher and emit helpers.",
             "inputSchema": { "type": "object", "properties": {
                 "path": { "type": "string" }, "package": { "type": "string" }, "class": { "type": "string" },
+                "language": { "type": "string", "enum": ["kotlin", "swift"], "description": "default kotlin" },
                 "out": { "type": "string", "description": "write to this file instead of returning the code" }
             } }
         },
@@ -183,7 +184,7 @@ fn call(name: &str, a: &Value) -> Value {
             text_result(t, ok)
         }
         "vard_bindings" => {
-            let (t, ok) = cmd_bindings(path, s("package").unwrap_or("dev.vard.generated"), s("class").unwrap_or("AppModule"), s("out"));
+            let (t, ok) = cmd_bindings(path, s("package").unwrap_or("dev.vard.generated"), s("class").unwrap_or("AppModule"), s("out"), s("language") == Some("swift"));
             text_result(t, ok)
         }
         "vard_explain" => {

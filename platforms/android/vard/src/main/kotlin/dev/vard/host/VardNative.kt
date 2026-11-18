@@ -28,6 +28,8 @@ object VardNative {
     @JvmStatic external fun scroll(handle: Long, x: Float, y: Float, dy: Float): Int
     /** The system light/dark setting; the app's `setColorScheme` may override it. */
     @JvmStatic external fun setDark(handle: Long, dark: Boolean)
+    /** The user's language as a BCP 47 tag (`ru`, `pt-BR`); `t()` follows it. */
+    @JvmStatic external fun setLocale(handle: Long, tag: String)
     @JvmStatic external fun resize(handle: Long, width: Float, height: Float)
     /** System bars + cutout insets and the keyboard height, dp. */
     @JvmStatic external fun setInsets(handle: Long, top: Float, bottom: Float, left: Float, right: Float, keyboard: Float)
@@ -45,4 +47,9 @@ object VardNative {
     /** The laid-out screen; layout documented in crates/vard-ffi/src/frame.rs. */
     @JvmStatic external fun frame(handle: Long): ByteArray
     @JvmStatic external fun diagnostics(handle: Long): String
+
+    /** Debug builds: accept `vard run --device` scripts on [addr]; 0 = listening. */
+    @JvmStatic external fun inspectListen(handle: Long, addr: String): Int
+    /** Run queued inspection scripts on this (UI) thread; true = something ran, redraw. */
+    @JvmStatic external fun inspectPoll(handle: Long): Boolean
 }

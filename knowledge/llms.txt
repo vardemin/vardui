@@ -111,6 +111,14 @@ safeArea: .all .top .bottom .vertical .horizontal .none (adds system bar/keyboar
 role: .none .button .checkbox .switch .heading .link .image  (accessibility + inspection)
 id: "name" → stable test handle `#name`.
 
+## Localized text
+strings { hello: "Hello, {name}", items: "{n} items" }    // default table = source language
+strings ru { hello: "Привет, {name}", items: "{n} шт." }  // a translation (same keys/placeholders)
+Text(t("hello", ["name": user.name]))   Text(t("items", ["n": "{count}"]))
+`locale` (String global, e.g. "ru", "pt-BR") picks the table (exact, then base language, then
+default). Keys and placeholders are checked at compile time (E0240, E0241; W0405 = missing
+translation). Test: `locale ru` action, then `expect "Привет, Ann"`.
+
 ## Color tokens (light/dark automatically)
 .background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear
 Use .text/.muted on .background/.surface, .onPrimary on .primary. Custom: `theme { brand: #... }`.
@@ -124,7 +132,7 @@ A design system is plain Vard views: copy std's pattern (tokens + params with en
 
 ## Platform (std; details: `vard doc native`)
 Values (reactive, read-only): safeArea (Insets: top bottom left right) keyboardHeight backProgress
-  isDark screenWidth screenHeight platform
+  isDark screenWidth screenHeight platform locale
 Events (`on name(args) { }`): appear back appResume appPause deepLink(url)
   pushReceived(message) pushOpened(message) pushTokenChanged(token)
   `on back` takes the system back gesture (innermost enabled wins); none enabled = system back.
@@ -157,13 +165,15 @@ tree | layout | tap SEL | type SEL "text" | submit SEL | focus SEL | scroll SEL 
 state | lint | log | stats | theme light|dark | size W H | shot FILE.png [scale]
 mock NAME VALUE | resolve NAME VALUE | send NAME VALUE | pending          (VALUE = JSON)
 emit EVENT [ARGS] | push received|opened "T" "B" [{data}] | back [P|cancel]
-insets T B [L R] | keyboard H | permission NAME STATUS | permission NAME answer STATUS
+insets T B [L R] | keyboard H | locale TAG | permission NAME STATUS | permission NAME answer STATUS
 storage | restart (cold start keeping prefs/secure/permissions)
 expect SEL|"text"   expect no "text"   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
 SEL: @12 (node id from `tree`) | #id | "label" (exact, then whole word, then substring)
 Mutating actions print a diff: `+` added, `-` removed, `~` changed lines.
 .vtest file = actions + optional header lines: @view Name  @size 390x844  @dark  @app ../path
 Each run starts fresh and is deterministic: replay the whole sequence, don't keep sessions.
+A real device (debug build): `vard run --device 127.0.0.1:8472 --do "tree"` (after
+`adb forward tcp:8472 tcp:8472`) runs the same actions on the live app.
 
 ## Diagnostics
 E01xx syntax, E02xx names/elements/props/packages, E03xx types, E04xx mutability, W warnings,

@@ -282,3 +282,28 @@ pub extern "system" fn Java_dev_vard_host_VardNative_focus(_: JNIEnv, _: JClass,
         }
     })
 }
+
+#[no_mangle]
+pub extern "system" fn Java_dev_vard_host_VardNative_inspectListen<'l>(mut env: JNIEnv<'l>, _: JClass<'l>, h: jlong, addr: JString<'l>) -> jint {
+    guard(-1, || {
+        let Some(addr) = string(&mut env, &addr) else { return -1 };
+        match app(h).map(|a| a.inspect_listen(&addr)) {
+            Some(Ok(())) => 0,
+            _ => -1,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_vard_host_VardNative_inspectPoll(_: JNIEnv, _: JClass, h: jlong) -> jboolean {
+    guard(0, || app(h).map(|a| a.inspect_poll() as jboolean).unwrap_or(0))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_vard_host_VardNative_setLocale<'l>(mut env: JNIEnv<'l>, _: JClass<'l>, h: jlong, tag: JString<'l>) {
+    guard((), || {
+        if let (Some(t), Some(a)) = (string(&mut env, &tag), app(h)) {
+            a.set_locale(&t)
+        }
+    })
+}

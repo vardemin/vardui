@@ -74,6 +74,18 @@ Vard compile errors are shown on screen; runtime errors (`R…`) and module hint
 adb logcat -s Vard VardFirebase
 ```
 
+## Driving the real screen from `vard`
+
+Debuggable builds listen for the action protocol on `127.0.0.1:8472`:
+
+```bash
+adb forward tcp:8472 tcp:8472
+vard run --device 127.0.0.1:8472 --do 'tree; tap "Add"'
+```
+
+The locale follows the system language (`Configuration.locales[0]`, also on change), so
+`t()` texts switch with it.
+
 ## Checking platform features on an emulator
 
 A push through the same path as FCM (debug builds only, `DebugPushReceiver`):

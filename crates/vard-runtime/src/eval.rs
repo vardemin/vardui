@@ -230,6 +230,7 @@ impl Runtime {
                 return self.sig_get(t);
             }
             "platform" => return Value::Str(self.platform.clone()),
+            "locale" => return self.sig_get(self.locale_sig),
             _ => {}
         }
         self.error("R0007", p.span(e), format!("`{}` is not available here", name));
@@ -362,6 +363,13 @@ impl Runtime {
                         Value::Unit
                     }
                     ("range", [Value::Int(a), Value::Int(b)]) => Value::List(Rc::new((*a..*b).map(Value::Int).collect())),
+                    ("t", [key, rest @ ..]) => {
+                        let locale = match self.sig_get(self.locale_sig) {
+                            Value::Str(s) => s.to_string(),
+                            _ => String::new(),
+                        };
+                        Value::Str(Rc::from(translate(p, &locale, &key.display(), rest.first())))
+                    }
                     ("min", [a, b]) => {
                         if self.arith(BinOp::Le, a.clone(), b.clone(), p.span(e)).truthy() {
                             a.clone()
@@ -809,4 +817,27 @@ impl Runtime {
         }
         flow
     }
+}
+
+/// The text of `key` for `locale`: the exact language table, else its base language
+/// (`pt-BR` → `pt`), else the default table; placeholders filled from `args` (a map).
+fn translate(p: &Program, locale: &str, key: &str, args: Option<&Value>) -> String {
+    let base = locale.split(['-', '_']).next().unwrap_or(locale);
+    let pick = |lang: Option<&str>| p.strings.iter().find(|s| s.lang.as_deref() == lang).and_then(|s| s.get(key));
+    let tpl = pick(Some(locale)).or_else(|| pick(Some(base))).or_else(|| pick(None));
+    let Some(tpl) = tpl else { return key.to_string() };
+    let mut out = String::new();
+    for part in tpl {
+        match part {
+            vard_lang::ast::TPart::Lit(s) => out.push_str(s),
+            vard_lang::ast::TPart::Param(n) => match args {
+                Some(Value::Map(m)) => match m.iter().find(|(k, _)| k.as_ref() == n.as_str()) {
+                    Some((_, v)) => out.push_str(&v.display()),
+                    None => out.push_str(&format!("{{{}}}", n)),
+                },
+                _ => out.push_str(&format!("{{{}}}", n)),
+            },
+        }
+    }
+    out
 }

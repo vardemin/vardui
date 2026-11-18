@@ -977,6 +977,58 @@ pub fn android_modules(dir: &str) -> Out {
     (s, true)
 }
 
+// ---------------- over-the-air channels ----------------
+
+pub fn cmd_ota(args: &[String]) -> Out {
+    let pos: Vec<&str> = args.iter().map(|s| s.as_str()).filter(|a| !a.starts_with("--")).collect();
+    let opt = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(|s| s.as_str());
+    match pos.first().copied() {
+        Some("init") => {
+            let Some(dir) = pos.get(1) else { return ("usage: vard ota init DIR".into(), false) };
+            match vard_pkg::ota::init(Path::new(dir)) {
+                Ok(key) => (
+                    format!(
+                        "created OTA channel in {}
+  public/   serve or sync anywhere (static files)
+  private/  the signing key — never publish it
+  channel key (compile into the app): {}
+next: vard ota publish APP --channel {}
+",
+                        dir, key, dir
+                    ),
+                    true,
+                ),
+                Err(e) => (e, false),
+            }
+        }
+        Some("publish") => {
+            let (Some(app), Some(channel)) = (pos.get(1).copied().or(Some(".")), opt("--channel")) else { return ("usage: vard ota publish [PATH] --channel DIR [--version V]".into(), false) };
+            let tmp = std::env::temp_dir().join(format!("vard-ota-{}.vpk", std::process::id()));
+            let (out, ok) = cmd_bundle(app, &tmp.to_string_lossy());
+            if !ok {
+                return (out, false);
+            }
+            let bytes = match std::fs::read(&tmp) {
+                Ok(b) => b,
+                Err(e) => return (e.to_string(), false),
+            };
+            let _ = std::fs::remove_file(&tmp);
+            let now = vard_pkg::now_secs();
+            let version = opt("--version").map(String::from).unwrap_or_else(|| vard_pkg::rfc3339(now).replace(['-', ':', 'T', 'Z'], ""));
+            match vard_pkg::ota::publish(Path::new(channel), &bytes, &version, &vard_pkg::rfc3339(now)) {
+                Ok((fp, sha)) => (
+                    format!("published bundle {} ({}) to {}/public/{}/latest.json
+  devices with native fingerprint {}… pick it up; others keep their bundle
+", version, &sha[..16], channel, fp, &fp[..16]),
+                    true,
+                ),
+                Err(e) => (e, false),
+            }
+        }
+        _ => ("usage: vard ota init DIR | publish [PATH] --channel DIR [--version V]".into(), false),
+    }
+}
+
 // ---------------- registry admin ----------------
 
 pub fn cmd_registry(args: &[String]) -> Out {

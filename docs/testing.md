@@ -27,7 +27,7 @@ One action per line or separated by `;`. The full list: `vard doc actions`.
 | `find SEL` · `state` · `log` · `stats` · `lint` | inspection |
 | `expect SEL` · `expect "text"` · `expect no "text"` | assertions |
 | `expect SEL checked\|unchecked\|enabled\|disabled\|offscreen\|visible` | element state |
-| `theme light\|dark` · `size W H` · `insets T B [L R]` · `keyboard H` | environment |
+| `theme light\|dark` · `size W H` · `insets T B [L R]` · `keyboard H` · `locale TAG` | environment |
 | `shot FILE.png [scale]` | a screenshot (only to judge visual design) |
 
 Selectors: `@12` (id from `tree`), `#email` (the `id:` prop), `"Sign in"` (exact label, then
@@ -92,6 +92,21 @@ FAIL tests/x.vtest
     ...
 1 passed, 1 failed
 ```
+
+## On a real device
+
+A debug build of the Android shell listens for the same action protocol on
+`127.0.0.1:8472` (scripts run on the UI thread):
+
+```bash
+adb forward tcp:8472 tcp:8472
+vard run --device 127.0.0.1:8472 --do 'tree; tap "Sign in"; expect "Welcome"'
+```
+
+Output, diffs and failures look exactly like headless runs, so the same `.vtest` steps and the
+same habits work against the real screen (real fonts, real platform services). Any host can
+offer it through the C ABI: `vard_inspect_listen(app, "127.0.0.1:8472")` once, then
+`vard_inspect_poll(app)` on the UI thread (redraw when it returns 1).
 
 ## Debugging order
 

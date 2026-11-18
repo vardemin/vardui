@@ -7,22 +7,14 @@ use std::collections::BTreeSet;
 use vard_lang::ast::{Program, TypeRef};
 use vard_lang::Compilation;
 
-/// Legacy: firebase.vard copied into a project by an old `vard add firebase`.
-pub const MODULE_FILES: &[&str] = &["firebase.vard"];
-
 pub struct Opts<'a> {
     pub package: &'a str,
     pub class: &'a str,
 }
 
 /// Package files (`@name/...`) ship their own native implementation ([native.android]).
-fn is_module_file(c: &Compilation, file: u16) -> bool {
-    let path = &c.sources.file(file).path;
-    if path.starts_with('@') {
-        return true;
-    }
-    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    MODULE_FILES.contains(&name)
+pub fn is_module_file(c: &Compilation, file: u16) -> bool {
+    c.sources.file(file).path.starts_with('@')
 }
 
 /// Vard type names that would shadow Kotlin builtins get a `V` prefix (JSON is unaffected).
@@ -126,7 +118,7 @@ pub fn kotlin(c: &Compilation, o: &Opts) -> Result<String, String> {
     let externs: Vec<_> = p.externs.iter().filter(|e| e.span.file != 0 && !is_module_file(c, e.span.file)).collect();
     let events: Vec<_> = p.events.iter().filter(|e| e.span.file != 0 && !is_module_file(c, e.span.file)).collect();
     if externs.is_empty() && events.is_empty() {
-        return Err("no `extern fn` / `extern event` in this project (module files from `vard add` are skipped)".into());
+        return Err("no `extern fn` / `extern event` in this project (packages ship their own native code)".into());
     }
     let mut types = BTreeSet::new();
     for e in &externs {

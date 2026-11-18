@@ -125,18 +125,40 @@ class VardView(
             }
         }
         VardNative.setDark(handle, systemDark())
+        VardNative.setLocale(handle, resources.configuration.locales[0].toLanguageTag())
         VardNative.setInsets(handle, insets[0], insets[1], insets[2], insets[3], insets[4])
         if (VardNative.mount(handle, null) != 0) {
             failure = VardNative.diagnostics(handle)
             return
         }
         host.mounted(handle)
+        startInspector()
+    }
+
+    /**
+     * Debuggable builds only: the action protocol of `vard run` on 127.0.0.1:8472, so
+     * `adb forward tcp:8472 tcp:8472 && vard run --device 127.0.0.1:8472 --do tree` drives
+     * this screen. Scripts run here on the UI thread, polled every 100 ms.
+     */
+    private fun startInspector() {
+        val debuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable || VardNative.inspectListen(handle, "127.0.0.1:8472") != 0) return
+        Log.i(TAG, "inspection: adb forward tcp:8472 tcp:8472 && vard run --device 127.0.0.1:8472")
+        val poll = object : Runnable {
+            override fun run() {
+                if (handle == 0L) return
+                if (VardNative.inspectPoll(handle)) refresh()
+                postDelayed(this, 100)
+            }
+        }
+        postDelayed(poll, 100)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (handle != 0L) {
             VardNative.setDark(handle, systemDark())
+            VardNative.setLocale(handle, newConfig.locales[0].toLanguageTag())
             refresh()
         }
     }

@@ -152,3 +152,24 @@ view App {
         r#"push received "Hi" "Body" {"k": "v"}; expect "last Hi/v perm no"; permission camera answer denied; tap "ask"; expect "perm no"; tap "ask"; expect "perm blocked""#,
     );
 }
+
+#[test]
+fn t_follows_the_locale() {
+    let src = r#"
+strings { hello: "Hello, {name}", bye: "Bye" }
+strings ru { hello: "Привет, {name}" }
+view App {
+  Column {
+    Text(t("hello", ["name": "Ann"]))
+    Text(t("bye"))
+    Text("lang {locale}")
+  }
+}"#;
+    let c = vard_lang::compile(&[("app.vard".to_string(), src.to_string())]);
+    assert!(!c.has_errors(), "{}", c.render_diags());
+    let mut rt = vard_runtime::Runtime::new(c, 390.0, 844.0);
+    rt.mount("App").unwrap();
+    let (out, ok) = rt.run_script("expect \"Hello, Ann\"\nlocale ru\nexpect \"Привет, Ann\"\nexpect \"Bye\"\nexpect \"lang ru\"\nlocale pt-BR\nexpect \"Hello, Ann\"");
+    assert!(ok, "{}", out);
+    assert!(out.contains("~ Text \"Привет, Ann\""), "the change is a diff of the tree: {}", out);
+}

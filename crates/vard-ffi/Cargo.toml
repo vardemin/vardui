@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 vard-lang = { path = "../vard-lang" }
 vard-runtime = { path = "../vard-runtime" }
+vard-pkg = { path = "../vard-pkg" }
 jni = { version = "0.21", default-features = false }
 
 [dev-dependencies]

@@ -156,7 +156,7 @@ impl std::ops::DerefMut for D<'_> {
 pub const VIEW_OUTER_PROPS: &[&str] =
     &["width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "aspectRatio", "grow", "alignSelf", "id", "opacity", "offsetX", "offsetY", "scale"];
 
-const BUILTIN_FNS: &[&str] = &["print", "range", "min", "max"];
+const BUILTIN_FNS: &[&str] = &["print", "range", "min", "max", "t"];
 
 impl<'a> Checker<'a> {
     pub fn new(p: &'a Program, src: &'a Sources) -> Checker<'a> {
@@ -209,6 +209,7 @@ impl<'a> Checker<'a> {
                 self.err("E0220", s.span, format!("type `{}` is already defined", s.name));
             }
         }
+        self.check_strings();
         for t in &p.themes {
             for (name, e, sp) in &t.entries {
                 if name == "font" {
@@ -307,6 +308,49 @@ impl<'a> Checker<'a> {
         }
         for v in &p.views {
             self.check_view(v);
+        }
+    }
+
+    /// Every language table has the default table's keys and placeholders.
+    fn check_strings(&mut self) {
+        let p = self.p;
+        let defaults: Vec<&StringsDecl> = p.strings.iter().filter(|s| s.lang.is_none()).collect();
+        if p.strings.is_empty() {
+            return;
+        }
+        let Some(base) = defaults.first() else {
+            let sp = p.strings[0].span;
+            self.err("E0240", sp, "localized strings need a default table: `strings { key: \"text\" }` (no language), used when the locale has no table")
+                .help("put the source language there; add `strings ru { ... }` etc. for translations");
+            return;
+        };
+        for d in defaults.iter().skip(1) {
+            self.err("E0220", d.span, "there is already a default `strings { }` table; merge them");
+        }
+        for tbl in p.strings.iter().filter(|s| s.lang.is_some()) {
+            let lang = tbl.lang.clone().unwrap_or_default();
+            for (k, parts, sp) in &tbl.entries {
+                match base.get(k) {
+                    None => {
+                        let keys: Vec<&str> = base.entries.iter().map(|e| e.0.as_str()).collect();
+                        let mut d = self.err("E0240", *sp, format!("`{}` is not a key of the default `strings` table", k));
+                        match closest(k, keys) {
+                            Some(s) => d.fix = Some(crate::diag::Fix { span: *sp, replacement: s.to_string() }),
+                            None => d.help = Some("add it to the default table first".into()),
+                        }
+                    }
+                    Some(bp) => {
+                        let (a, b) = (placeholders(bp), placeholders(parts));
+                        for x in b.iter().filter(|x| !a.contains(x)) {
+                            self.err("E0241", *sp, format!("`{{{}}}` in `{}` ({}) is not a placeholder of the default text ({})", x, k, lang, if a.is_empty() { "none".to_string() } else { a.iter().map(|s| format!("{{{}}}", s)).collect::<Vec<_>>().join(" ") }));
+                        }
+                    }
+                }
+            }
+            let missing: Vec<&str> = base.entries.iter().filter(|e| tbl.get(&e.0).is_none()).map(|e| e.0.as_str()).collect();
+            if !missing.is_empty() {
+                self.warn("W0405", tbl.span, format!("`strings {}` has no translation for: {} (the default text is shown)", lang, missing.join(", ")));
+            }
         }
     }
 
@@ -1384,6 +1428,7 @@ impl<'a> Checker<'a> {
                         }
                         return Ty::Unit;
                     }
+                    "t" => return self.check_t(args, sp),
                     "range" => {
                         let sig = [Ty::Int, Ty::Int].map(|ty| ParamSig { name: String::new(), ty, has_default: false, bind: false });
                         self.call_args(name, &sig, args, sp);
@@ -1451,6 +1496,71 @@ impl<'a> Checker<'a> {
     }
 
     /// Match call arguments (positional first, then named) against a signature.
+    /// `t("key", ["name": value])`: a localized string. Literal keys and placeholders are
+    /// checked against the default `strings` table.
+    fn check_t(&mut self, args: &[Arg], sp: Span) -> Ty {
+        let p = self.p;
+        let Some(first) = args.first() else {
+            self.err("E0206", sp, "`t` needs a key: `t(\"greeting\")`");
+            return Ty::Str;
+        };
+        self.expect(first.value, &Ty::Str);
+        if let Some(a) = args.get(1) {
+            match self.check(a.value, None) {
+                Ty::Map(_) | Ty::Unknown => {}
+                other => {
+                    self.err("E0301", p.span(a.value), format!("t()'s second argument is a map of placeholder values, e.g. `[\"name\": user]`, found {}", other));
+                }
+            }
+        }
+        if args.len() > 2 {
+            self.err("E0316", sp, "`t` takes a key and an optional map of placeholder values");
+        }
+        let base = p.strings.iter().find(|s| s.lang.is_none());
+        let key = match p.expr(first.value) {
+            Expr::Str(parts) if parts.iter().all(|x| matches!(x, StrPart::Lit(_))) => parts.iter().map(|x| if let StrPart::Lit(s) = x { s.clone() } else { String::new() }).collect::<String>(),
+            _ => return Ty::Str,
+        };
+        let Some(base) = base else {
+            self.err("E0240", p.span(first.value), format!("no `strings {{ }}` table declares `{}`", key)).help(format!("declare it: `strings {{ {}: \"...\" }}`", key));
+            return Ty::Str;
+        };
+        let Some(tpl) = base.get(&key) else {
+            let keys: Vec<&str> = base.entries.iter().map(|e| e.0.as_str()).collect();
+            let ksp = p.span(first.value);
+            let mut d = self.err("E0240", ksp, format!("no string `{}` in the default `strings` table", key));
+            match closest(&key, keys) {
+                Some(s) => d.fix = Some(crate::diag::Fix { span: ksp, replacement: format!("\"{}\"", s) }),
+                None => d.help = Some(format!("add it: `strings {{ {}: \"...\" }}`", key)),
+            }
+            return Ty::Str;
+        };
+        let want = placeholders(tpl);
+        let given: Option<Vec<String>> = match args.get(1).map(|a| p.expr(a.value)) {
+            None => Some(Vec::new()),
+            Some(Expr::Map(kv)) => kv
+                .iter()
+                .map(|(k, _)| match p.expr(*k) {
+                    Expr::Str(ps) if ps.iter().all(|x| matches!(x, StrPart::Lit(_))) => Some(ps.iter().map(|x| if let StrPart::Lit(s) = x { s.clone() } else { String::new() }).collect()),
+                    _ => None,
+                })
+                .collect(),
+            _ => None,
+        };
+        if let Some(given) = given {
+            let missing: Vec<&String> = want.iter().filter(|w| !given.contains(w)).collect();
+            let extra: Vec<&String> = given.iter().filter(|g| !want.contains(g)).collect();
+            if !missing.is_empty() {
+                self.err("E0241", sp, format!("`{}` needs {}", key, missing.iter().map(|m| format!("\"{}\"", m)).collect::<Vec<_>>().join(", ")))
+                    .help(format!("t(\"{}\", [{}])", key, want.iter().map(|m| format!("\"{}\": ...", m)).collect::<Vec<_>>().join(", ")));
+            }
+            for x in extra {
+                self.err("E0241", sp, format!("`{}` has no placeholder `{{{}}}`", key, x));
+            }
+        }
+        Ty::Str
+    }
+
     fn call_args(&mut self, what: &str, sig: &[ParamSig], args: &[Arg], sp: Span) {
         let p = self.p;
         let mut filled = vec![false; sig.len()];
