@@ -60,6 +60,9 @@ app.vard:2:14 error E0202: unknown prop `fontSize` on `Text`
 | `P020` | `vard.toml` is not valid TOML (the subset Vard uses) |
 | `P021` | a wrong or unknown field in `vard.toml` |
 | `P022` | the project's packages are missing or out of date |
+| `P023` | a minor/patch release fails the previous version's tests (behavior changed) |
+| `P024` | the package is new (first published < 72 h ago): a person confirms with `--allow-new` |
+| `P025` | a git dependency could not be fetched, or its tag/rev/branch does not exist |
 
 ## Rules for new diagnostics (for framework developers)
 

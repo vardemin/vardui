@@ -56,6 +56,11 @@ since = "2.0.0"
 from = "Chart"                  # a top-level name
 to = "BarChart"
 
+[[migrate]]
+since = "2.0.0"
+from = "Style.outline"          # an enum variant (.outline -> .ghost) or a struct field
+to = "Style.ghost"
+
 [native.android]
 module = "dev.example.charts.ChartsModule"   # the VardModule class
 gradle = "native/android"                    # an Android library inside the package
@@ -156,7 +161,24 @@ error P015: API change since 1.0.0 is major: ! ~ view BarChart: `max` removed �
 ```
 
 Accompany every rename with `[[migrate]]` — then `vard check --fix` rewrites the consumer's
-code by itself.
+code by itself. `from = "X.y"` means, depending on what `X` is in your package: a view's
+parameter, an enum's variant (`.y` in consumer code), or a struct's field (both
+`X(y: ...)` and `value.y`).
+
+### Behavior is checked too
+
+For a minor or patch release the gate also runs the **previous version's** `example/` tests
+against the new code. They are what consumers relied on; if they fail, the release changes
+behavior even when the API diff is clean (`P023`):
+
+```text
+error P023: behavior changed: the tests of 1.0.0 fail against 1.0.1:
+  FAIL example/tests/total.vtest
+    > expect "Total: 60"
+  fix: restore the old behavior, or publish it as 2.0.0
+```
+
+On a new major line the old tests only produce a warning.
 
 ## Publishing
 
@@ -177,9 +199,11 @@ published charts 1.0.0 to acme (log #1)
 ```
 
 The gate checks: the name (valid, not reserved, not one edit from someone else's), a
-one-line summary, no path dependencies, AGENT.md and its budget, archive size (≤ 8 MB),
+one-line summary, no path or git dependencies, AGENT.md and its budget, archive size (≤ 8 MB),
 compilation with dependencies, capabilities, `[sim]`, migrations, tests, version
-immutability and semver. The registry server runs the same checks when accepting over HTTP.
+immutability, semver and the previous version's tests. It records the publication time and
+**provenance** (in GitHub Actions: repository, commit and run URL; otherwise `local`), which
+`vard info` and the registry's web page show. The registry server runs the same checks when accepting over HTTP.
 
 To withdraw a version (a serious bug, a leaked secret): `vard yank charts@1.0.1 --registry DIR`.
 Existing lockfiles keep working; new resolutions skip it.

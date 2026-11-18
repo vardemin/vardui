@@ -22,11 +22,11 @@ a project directory (default: the current directory).
 | Command | What it does |
 |---|---|
 | `vard search WORDS` | search by name, keywords, summary and exported names in all of the project's registries |
-| `vard info NAME` | versions, capabilities with explanations, dependencies, the full API, tests at publish time |
-| `vard add NAME[@REQ] [PATH] [--path DIR] [--registry R] [--allow CAPS]` | add a dependency (exact names only), install, update `vard.lock`; `--allow` records the approval in `[policy]` |
+| `vard info NAME [PATH]` | versions, capabilities with explanations, dependencies, publication time and provenance, the full API, tests at publish time |
+| `vard add NAME[@REQ] [PATH] [--path DIR \| --git URL [--tag T\|--rev R\|--branch B] [--dir D]] [--registry R] [--allow CAPS] [--allow-new]` | add a dependency (exact names only), install, update `vard.lock`; `--allow` records the approval in `[policy]`; `--allow-new` confirms a quarantined package |
 | `vard remove NAME [PATH]` | remove a dependency |
-| `vard install [PATH] [--allow CAPS]` | resolve `vard.toml`, download and verify, rewrite `vard.lock` |
-| `vard update [NAME] [PATH] [--major]` | raise requirements to the newest versions; prints the API diff |
+| `vard install [PATH] [--allow CAPS] [--allow-new]` | resolve `vard.toml`, download and verify, rewrite `vard.lock` |
+| `vard update [NAME] [PATH] [--major]` | raise requirements to the newest versions (git: re-resolve the branch/tag); prints the API diff |
 | `vard api [PATH\|NAME] [--caps]` | public API and capabilities (with evidence: which call needs which capability) |
 | `vard pack [PATH] [--out FILE]` | a deterministic `.vpk` archive |
 | `vard publish [PATH] --registry DIR\|URL\|NAME [--token T] [--dry-run]` | the gate and publishing |
@@ -34,7 +34,8 @@ a project directory (default: the current directory).
 | `vard bundle [PATH] --out DIR\|FILE.vpk` | everything a device needs + `bundle.json` |
 | `vard registry init DIR [--name N]` | create a registry (`public/` + `private/`) |
 | `vard registry token DIR OWNER` | a publish token (shown once) |
-| `vard registry serve DIR [--addr HOST:PORT]` | HTTP hosting of a registry with a publish API |
+| `vard registry serve DIR [--addr HOST:PORT]` | HTTP hosting of a registry (web page at `/`) with a publish API |
+| `vard registry rotate-key DIR` | hand the registry over to a new signing key (signed by the old one) |
 | `vard registry verify DIR\|URL` | verify signatures, the log chain and every archive |
 
 Environment variables: `VARD_HOME` (cache, keys, tokens; default `~/.vard`),

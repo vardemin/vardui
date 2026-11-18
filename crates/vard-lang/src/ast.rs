@@ -203,6 +203,18 @@ pub enum DotKind {
     Color,
 }
 
+/// A package renamed an enum variant or a struct field (`[[migrate]] from = "Kind.solid"`);
+/// the checker turns uses of the old name into E0234 with a fix.
+#[derive(Clone, Debug)]
+pub struct MemberMigration {
+    /// the enum/struct, by its internal (linked) name
+    pub ty: String,
+    pub from: String,
+    pub to: String,
+    pub pkg: String,
+    pub since: String,
+}
+
 #[derive(Default)]
 pub struct Program {
     pub exprs: Vec<Expr>,
@@ -227,6 +239,8 @@ pub struct Program {
     /// User code mentions `safeArea` (prop or value): it manages system insets itself, so the
     /// runtime does not pad the root.
     pub uses_safe_area: bool,
+    /// filled by the linker
+    pub member_migrations: Vec<MemberMigration>,
 }
 
 impl Program {

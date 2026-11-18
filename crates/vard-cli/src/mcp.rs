@@ -167,7 +167,7 @@ fn call(name: &str, a: &Value) -> Value {
         }
         "vard_add" => {
             // no `allow` here on purpose: approving a capability is a person's decision
-            let (t, ok) = pkg::cmd_add(s("name").unwrap_or(""), path, None, s("registry"), &[]);
+            let (t, ok) = pkg::cmd_add(s("name").unwrap_or(""), path, None, None, s("registry"), &[], false);
             text_result(t, ok)
         }
         "vard_update" => {

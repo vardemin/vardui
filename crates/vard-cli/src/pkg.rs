@@ -98,7 +98,31 @@ fn report_install(r: &vard_pkg::project::InstallReport) -> String {
 
 // ---------------- add / remove / install / update ----------------
 
-pub fn cmd_add(spec: &str, dir: &str, path_dep: Option<&str>, registry: Option<&str>, allow: &[String]) -> Out {
+/// `vard add NAME --git URL [--tag T | --rev R | --branch B] [--dir D]`
+#[derive(Default)]
+pub struct GitSpec<'a> {
+    pub url: &'a str,
+    pub tag: Option<&'a str>,
+    pub rev: Option<&'a str>,
+    pub branch: Option<&'a str>,
+    pub dir: Option<&'a str>,
+}
+
+impl GitSpec<'_> {
+    fn toml(&self) -> String {
+        let q = vard_pkg::toml::quote;
+        let mut s = format!("{{ git = {}", q(self.url));
+        for (k, v) in [("tag", self.tag), ("rev", self.rev), ("branch", self.branch), ("dir", self.dir)] {
+            if let Some(v) = v {
+                s.push_str(&format!(", {} = {}", k, q(v)));
+            }
+        }
+        s.push_str(" }");
+        s
+    }
+}
+
+pub fn cmd_add(spec: &str, dir: &str, path_dep: Option<&str>, git: Option<GitSpec>, registry: Option<&str>, allow: &[String], allow_new: bool) -> Out {
     let (name, req) = split_spec(spec);
     if !manifest::valid_name(name) {
         return fail(Problem::new("P010", format!("`{}` is not a package name (lowercase identifier)", name)), "vard.toml");
@@ -108,9 +132,10 @@ pub fn cmd_add(spec: &str, dir: &str, path_dep: Option<&str>, registry: Option<&
         Err(e) => return (e, false),
     };
     let regs = p.registries();
-    let value = match path_dep {
-        Some(pd) => format!("{{ path = {} }}", vard_pkg::toml::quote(pd)),
-        None => {
+    let value = match (path_dep, &git) {
+        (Some(pd), _) => format!("{{ path = {} }}", vard_pkg::toml::quote(pd)),
+        (None, Some(g)) => g.toml(),
+        (None, None) => {
             let reg = match regs.get(registry) {
                 Ok(r) => r,
                 Err(e) => return fail(e, "vard.toml"),
@@ -158,7 +183,7 @@ pub fn cmd_add(spec: &str, dir: &str, path_dep: Option<&str>, registry: Option<&
             return (e, false);
         }
     };
-    let r = match project::install(&p2, allow) {
+    let r = match project::install_with(&p2, &project::InstallOpts { allow, allow_new, ..Default::default() }) {
         Ok(r) => r,
         Err(e) => {
             restore();
@@ -176,13 +201,14 @@ pub fn cmd_add(spec: &str, dir: &str, path_dep: Option<&str>, registry: Option<&
     let src = match (&sel.src, path_dep) {
         (resolve::Src::Path(_), Some(pd)) => format!("path {}", pd),
         (resolve::Src::Path(d), None) => display(d),
+        (resolve::Src::Git { url, commit, .. }, _) => format!("git {} @ {}", url, &commit[..12.min(commit.len())]),
         (resolve::Src::Registry(r), _) => r.clone(),
     };
     let mut s = format!("added {} {} ({})\n", sel.name, sel.version, src);
     s.push_str(&format!("  caps: {}{}\n", caps_text(&sel.caps), if used.is_empty() { String::new() } else { format!(" (approved: {} → [policy])", used.join(", ")) }));
     let api_line = match (&sel.entry, &sel.src) {
         (Some(e), _) => api_summary(&e.api),
-        (None, resolve::Src::Path(d)) => project::package_files(d).ok().and_then(|f| builtin::entry_from_files(&f).ok()).map(|e| api_summary(&e.api)).unwrap_or_default(),
+        (None, src) if src.local_dir().is_some() => project::package_files(src.local_dir().unwrap()).ok().and_then(|f| builtin::entry_from_files(&f).ok()).map(|e| api_summary(&e.api)).unwrap_or_default(),
         _ => String::new(),
     };
     s.push_str(&format!("  api: {} — `vard doc {}`\n", api_line, name));
@@ -209,7 +235,7 @@ pub fn cmd_remove(name: &str, dir: &str) -> Out {
     }
 }
 
-pub fn cmd_install(dir: &str, allow: &[String]) -> Out {
+pub fn cmd_install(dir: &str, allow: &[String], allow_new: bool) -> Out {
     let p = match Project::open(dir) {
         Ok(p) => p,
         Err(e) => return (e, false),
@@ -217,7 +243,7 @@ pub fn cmd_install(dir: &str, allow: &[String]) -> Out {
     if p.manifest.is_none() {
         return ("no vard.toml here; `vard add NAME` creates one".into(), false);
     }
-    match project::install(&p, allow) {
+    match project::install_with(&p, &project::InstallOpts { allow, allow_new, ..Default::default() }) {
         Ok(r) => {
             let mut s = report_install(&r);
             if s.is_empty() {
@@ -246,6 +272,7 @@ pub fn cmd_update(name: Option<&str>, dir: &str, major: bool) -> Out {
     let mut text = p.manifest_text.clone();
     let mut out = String::new();
     let mut bumped: Vec<(String, String, String, Option<String>)> = Vec::new();
+    let git_refresh: Vec<String> = m.deps.iter().filter(|d| name.is_none_or(|n| n == d.name) && matches!(d.source, DepSource::Git { .. })).map(|d| d.name.clone()).collect();
     for d in m.deps.iter().filter(|d| name.is_none_or(|n| n == d.name)) {
         let DepSource::Registry(rname) = &d.source else { continue };
         let Ok(reg) = regs.get(rname.as_deref()) else { continue };
@@ -270,19 +297,29 @@ pub fn cmd_update(name: Option<&str>, dir: &str, major: bool) -> Out {
             bumped.push((d.name.clone(), old_lock.get(&d.name).map(|l| l.version.clone()).unwrap_or_default(), v.to_string(), rname.clone()));
         }
     }
-    if bumped.is_empty() {
+    if bumped.is_empty() && git_refresh.is_empty() {
         let hint = if major { "" } else { " (new major versions: `vard update --major`)" };
         return (format!("everything is at the newest compatible version{}\n", hint), true);
     }
     let mpath = p.dir.join("vard.toml");
     let _ = std::fs::write(&mpath, &text);
-    let r = match Project::open(dir).map_err(|e| Problem::new("P021", e)).and_then(|p| project::install(&p, &[])) {
+    let r = match Project::open(dir).map_err(|e| Problem::new("P021", e)).and_then(|p| project::install_refreshing(&p, &[], &git_refresh)) {
         Ok(r) => r,
         Err(e) => {
             let _ = std::fs::write(&mpath, &p.manifest_text);
             return fail(e, "vard.toml");
         }
     };
+    for n in &git_refresh {
+        let commit = |l: &vard_pkg::lock::Lock| l.get(n).and_then(|lp| vard_pkg::git::parse_src(&lp.src)).map(|g| g.commit[..12.min(g.commit.len())].to_string()).unwrap_or_default();
+        let (a, b) = (commit(&old_lock), commit(&r.lock));
+        let ver = |l: &vard_pkg::lock::Lock| l.get(n).map(|lp| lp.version.clone()).unwrap_or_default();
+        if a == b {
+            out.push_str(&format!("= {} {} (git {}: no new commits)\n", n, ver(&r.lock), b));
+        } else {
+            out.push_str(&format!("~ {} {} -> {} (git {} -> {})\n", n, ver(&old_lock), ver(&r.lock), if a.is_empty() { "?" } else { &a }, b));
+        }
+    }
     for (n, from, to, rname) in &bumped {
         out.push_str(&format!("~ {} {} -> {}\n", n, if from.is_empty() { "?" } else { from }, to));
         let Ok(reg) = regs.get(rname.as_deref()) else { continue };
@@ -349,7 +386,11 @@ pub fn cmd_search(query: &str, dir: &str) -> Out {
                 Some((_, f)) => format!(" · {} failing tests", f),
                 None => String::new(),
             };
-            rows.push((score, format!("{} {} [{}] — {}\n    caps: {} · exports: {}{}{}\n", c.name, c.latest, reg.name, c.summary, caps_text(&c.caps), exports.join(" "), more, tests)));
+            let fresh = vard_pkg::parse_rfc3339(&c.since).is_some_and(|f| vard_pkg::now_secs().saturating_sub(f) < vard_pkg::QUARANTINE_SECS);
+            let new = if fresh && reg.is_remote() { " · NEW (< 72h)" } else { "" };
+            // the default registry's copy first when several registries carry a package
+            let score = score * 2 + i32::from(reg.name == regs.default);
+            rows.push((score, format!("{} {} [{}] — {}\n    caps: {} · exports: {}{}{}{}\n", c.name, c.latest, reg.name, c.summary, caps_text(&c.caps), exports.join(" "), more, tests, new)));
         }
     }
     rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -411,6 +452,18 @@ pub fn cmd_info(name: &str, dir: &str) -> Out {
         None => s.push_str("tests: bundled with the toolchain (verified in its CI)\n"),
     }
     s.push_str(&format!("archive: {} sha256 {} · AGENT.md {}\n", kb(latest.size as usize), &latest.sha256[..16], kb(latest.doc_bytes as usize)));
+    let first = entries.iter().filter_map(|e| vard_pkg::parse_rfc3339(&e.published)).min();
+    if !latest.published.is_empty() {
+        let fresh = first.is_some_and(|f| vard_pkg::now_secs().saturating_sub(f) < vard_pkg::QUARANTINE_SECS);
+        s.push_str(&format!("published: {} by {}{}\n", latest.published, latest.owner, if fresh { " · NEW: first version < 72h ago (needs --allow-new)" } else { "" }));
+    }
+    if let Some(p) = &latest.provenance {
+        let get = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        match get("builder").as_str() {
+            "github-actions" => s.push_str(&format!("built by: {} @ {} ({})\n", get("repository"), &get("commit")[..12.min(get("commit").len())], get("run"))),
+            b => s.push_str(&format!("built by: {}\n", b)),
+        }
+    }
     s.push_str(&format!("api ({}):\n", api_summary(&latest.api)));
     for l in api::render(&latest.api).lines() {
         s.push_str(&format!("  {}\n", l));
@@ -508,7 +561,33 @@ pub struct Gate {
 
 /// Everything a registry checks before accepting `dir` as a new version.
 /// `prior`: what the target registry already has (index of this name, all names with owners).
-pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner: &str) -> Gate {
+/// The previous version's `example/` (app + tests), pointed at the new package in `dir`, as a
+/// temporary project; `None` when the previous archive has no example.
+fn previous_example(reg: &Registry, prev: &IndexEntry, dir: &Path, name: &str) -> Option<PathBuf> {
+    let files = vpk::unpack(&reg.blob(prev).ok()?).ok()?;
+    let tmp = std::env::temp_dir().join(format!("vard-compat-{}-{}", &prev.sha256[..12], std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let mut any = false;
+    for (rel, bytes) in files.iter().filter(|f| f.0.starts_with("example/")) {
+        let p = tmp.join(rel);
+        std::fs::create_dir_all(p.parent()?).ok()?;
+        std::fs::write(&p, bytes).ok()?;
+        any |= rel.ends_with(".vtest");
+    }
+    if !any {
+        return None;
+    }
+    let ex = tmp.join("example");
+    let abs = std::fs::canonicalize(dir).ok()?.to_string_lossy().replace('\\', "/");
+    let abs = abs.strip_prefix("//?/").unwrap_or(&abs).to_string();
+    let text = std::fs::read_to_string(ex.join("vard.toml")).unwrap_or_default();
+    std::fs::write(ex.join("vard.toml"), manifest::set_dependency(&text, name, &format!("{{ path = {} }}", vard_pkg::toml::quote(&abs)))).ok()?;
+    let _ = std::fs::remove_file(ex.join("vard.lock"));
+    Some(ex)
+}
+
+/// `reg`: the target registry, to fetch the previous version for the behavioral check.
+pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner: &str, reg: Option<&Registry>) -> Gate {
     let mut rep = String::new();
     let mut probs: Vec<Problem> = Vec::new();
     let mut warn: Vec<String> = Vec::new();
@@ -534,8 +613,8 @@ pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner:
     if let Some((_, o)) = names.iter().find(|(n, o)| *n == pk.name && o != owner) {
         probs.push(Problem::new("P018", format!("`{}` belongs to {}", pk.name, o)));
     }
-    for d in m.deps.iter().filter(|d| matches!(d.source, DepSource::Path(_))) {
-        probs.push(Problem { code: "P021", line: d.line, msg: format!("path dependency `{}` cannot be published: publish it first, then depend on it by version", d.name), fix: Some(format!("{} = \"1.0\"", d.name)) });
+    for d in m.deps.iter().filter(|d| !matches!(d.source, DepSource::Registry(_))) {
+        probs.push(Problem { code: "P021", line: d.line, msg: format!("path/git dependency `{}` cannot be published: publish it to a registry first, then depend on it by version", d.name), fix: Some(format!("{} = \"1.0\"", d.name)) });
     }
     if pk.summary.trim().is_empty() {
         probs.push(Problem::new("P021", "[package] needs a one-line `summary` (shown in search results)").fix("summary = \"What it is, in one line\""));
@@ -638,6 +717,20 @@ pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner:
             let detail = if lines.is_empty() { String::new() } else { format!(": {}", lines.iter().take(6).cloned().collect::<Vec<_>>().join("; ")) };
             okl(format!("semver: {} change vs {}{}", bump.name(), pv, detail), &mut rep);
         }
+        // behavior: the previous version's example tests are a contract for minor/patch releases
+        let breaking_release = version.line() != pv.line();
+        if let Some(ex) = reg.and_then(|r| previous_example(r, pe, dir, &pk.name)) {
+            let (out, ok) = cmd_test(&ex.to_string_lossy());
+            let _ = std::fs::remove_dir_all(ex.parent().unwrap());
+            match (ok, breaking_release) {
+                (true, _) => okl(format!("compat: the tests of {} pass against {}", pv, version), &mut rep),
+                (false, true) => warn.push(format!("the tests of {} fail against {} (allowed: a new major line)", pv, version)),
+                (false, false) => probs.push(
+                    Problem::new("P023", format!("behavior changed: the tests of {} fail against {}:\n{}", pv, version, out.trim_end()))
+                        .fix(format!("restore the old behavior, or publish it as {}", pv.bumped("major"))),
+                ),
+            }
+        }
     } else {
         okl(format!("api: {} (first version)", api_summary(&items)), &mut rep);
     }
@@ -659,6 +752,8 @@ pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner:
         e.tests = tests;
         e.owner = owner.to_string();
         e.tested_with = vard_pkg::VARD_VERSION.to_string();
+        e.published = vard_pkg::rfc3339(vard_pkg::now_secs());
+        e.provenance = Some(provenance());
         okl(format!("archive: {} files, {}, sha256 {}", files.len(), kb(blob.len()), &e.sha256[..16]), &mut rep);
     }
     for w in &warn {
@@ -667,6 +762,18 @@ pub fn gate(dir: &Path, prior: &[IndexEntry], names: &[(String, String)], owner:
     rep.push_str(&render_all(&probs, "vard.toml"));
     let ok = probs.is_empty() && entry.is_some();
     Gate { entry, blob, report: rep, ok }
+}
+
+/// Where this archive is being built: the CI run when there is one (GitHub Actions), else local.
+fn provenance() -> serde_json::Value {
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    match (env("GITHUB_ACTIONS"), env("GITHUB_REPOSITORY"), env("GITHUB_SHA"), env("GITHUB_RUN_ID")) {
+        (Some(_), Some(repo), Some(sha), Some(run)) => {
+            let server = env("GITHUB_SERVER_URL").unwrap_or_else(|| "https://github.com".into());
+            serde_json::json!({ "builder": "github-actions", "repository": format!("{}/{}", server, repo), "commit": sha, "run": format!("{}/{}/actions/runs/{}", server, repo, run) })
+        }
+        _ => serde_json::json!({ "builder": "local" }),
+    }
 }
 
 // ---------------- pack / publish / yank ----------------
@@ -732,7 +839,7 @@ pub fn cmd_publish(dir: &str, registry: Option<&str>, token_arg: Option<&str>, o
         let reg = Registry::open(&rname, &url);
         let prior = reg.index(&name).unwrap_or_default();
         let names: Vec<(String, String)> = reg.catalog().unwrap_or_default().into_iter().map(|c| (c.name, String::new())).filter(|(n, _)| *n == name).collect();
-        let g = gate(&p.dir, &prior, &names, "");
+        let g = gate(&p.dir, &prior, &names, "", Some(&reg));
         if !g.ok || dry_run {
             return (format!("{}{}", g.report, if g.ok { "dry run: not published\n" } else { "" }), g.ok);
         }
@@ -761,7 +868,8 @@ pub fn cmd_publish(dir: &str, registry: Option<&str>, token_arg: Option<&str>, o
             None => prior.first().map(|e| e.owner.clone()).unwrap_or_else(|| "local".into()),
         },
     };
-    let g = gate(&p.dir, &prior, &names, &owner);
+    let target = Registry::open(&rname, &root.to_string_lossy());
+    let g = gate(&p.dir, &prior, &names, &owner, Some(&target));
     if !g.ok || dry_run {
         return (format!("{}{}", g.report, if g.ok { "dry run: not published\n" } else { "" }), g.ok);
     }
@@ -904,6 +1012,19 @@ pub fn cmd_registry(args: &[String]) -> Out {
                 Err(e) => (e, false),
             }
         }
+        Some("rotate-key") => {
+            let Some(dir) = pos.get(1) else { return ("usage: vard registry rotate-key DIR".into(), false) };
+            match registry::rotate_key(Path::new(dir)) {
+                Ok((old, new)) => (
+                    format!(
+                        "rotated the signing key of {}\n  old {}… → new {}… (the rotation is signed by the old key)\n  clients that trust the old key follow the signed chain; publish public/ now\n  the new secret is private/registry.key; update your CI secret (e.g. REGISTRY_KEY) with it\n",
+                        dir, &old[..16], &new[..16]
+                    ),
+                    true,
+                ),
+                Err(e) => (e, false),
+            }
+        }
         Some("verify") => {
             let Some(url) = pos.get(1) else { return ("usage: vard registry verify DIR|URL".into(), false) };
             let reg = Registry::open("verify", url);
@@ -922,6 +1043,6 @@ pub fn cmd_registry(args: &[String]) -> Out {
             }
             (format!("ok: {} package(s), {} version(s): signatures, hash chain and every blob verified\n", cat.len(), n), true)
         }
-        _ => ("usage: vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr HOST:PORT] | verify DIR|URL".into(), false),
+        _ => ("usage: vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr HOST:PORT] | rotate-key DIR | verify DIR|URL".into(), false),
     }
 }

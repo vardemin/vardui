@@ -21,6 +21,8 @@ Reference: `vard doc packages`. Codes: `vard explain P008`.
 - `E0231`: two packages export the name — write `pkg.Name`.
 - `E0232`: name from a package you do not depend on directly — `vard add` it.
 - `E0234` after `vard update`: run `vard check --fix`.
+- `P024`: the package is brand new (< 72h). Tell the user who published it (`vard info NAME`:
+  owner, provenance) and let them decide; only they run `vard add NAME --allow-new`.
 - `P006`: two dependencies need different major versions of one package — update the
   older dependent (`vard update NAME --major`) or ask the user.
 

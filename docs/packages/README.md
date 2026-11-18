@@ -104,11 +104,12 @@ delivered without rebuilding the APK as long as the native part did not change. 
 
 | Implemented (v0.3) | Roadmap |
 |---|---|
-| vard.toml, vard.lock, MVS, paths and registries as sources | git sources for dependencies |
-| namespace linker, `pkg.Name`, privacy, migrations | migrations of field types and enum variant renames |
-| API and capabilities computed by the compiler; enforced semver | behavioral compatibility checks with the previous version's tests |
-| publish gate: compile, capabilities, tests, semver, AGENT.md budget, name | quarantine for new packages, build attestations (provenance) |
-| static registry, signed log, key pinning, prefix check | Merkle inclusion proofs instead of the full log; key rotation |
-| `vard registry serve` with token-based publishing, yank | web UI, organizations and roles |
-| the public registry `vard` on GitHub Pages, publishing by pull request; the `builtin` registry | a web UI for the public registry |
+| vard.toml, vard.lock, MVS; registry, path and **git** sources (commit + content hash pinned) | — |
+| namespace linker, `pkg.Name`, privacy; migrations of names, view params, **enum variants and struct fields** | migrations of field *types* (a type change is a major version today) |
+| API and capabilities computed by the compiler; enforced semver; **the previous version's tests run against minor/patch releases** | — |
+| publish gate: compile, capabilities, tests, semver, behavior, AGENT.md budget, name; **publication time and provenance** | signed build attestations (Sigstore) |
+| **quarantine** of new remote packages (`--allow-new`) | — |
+| static registry, signed log, key pinning, prefix check, **signed key rotation** | Merkle inclusion proofs instead of the full log (needed beyond ~100k versions) |
+| `vard registry serve` with token-based publishing, yank; **a web page in every registry** | organizations and roles |
+| the public registry `vard` on GitHub Pages, publishing by pull request; the `builtin` registry | — |
 | `vard bundle` with the native fingerprint; automatic native modules on Android | an OTA update client in the Android/iOS hosts; iOS modules in packages |

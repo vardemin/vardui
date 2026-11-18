@@ -77,13 +77,28 @@ fn handle(root: &Path, mut stream: TcpStream) -> std::io::Result<()> {
     match (method.as_str(), path.as_str()) {
         ("GET", p) | ("HEAD", p) => {
             let rel = p.trim_start_matches('/');
-            let rel = if rel.is_empty() { "config.json" } else { rel };
+            // `/` is the registry's web page (older registries without one: config.json)
+            let rel = if !rel.is_empty() {
+                rel
+            } else if root.join("public").join("index.html").exists() {
+                "index.html"
+            } else {
+                "config.json"
+            };
             if !vpk::safe_path(rel) {
                 return respond(&mut stream, 404, "text/plain", b"not found\n");
             }
             match std::fs::read(root.join("public").join(rel)) {
                 Ok(b) => {
-                    let ct = if rel.ends_with(".json") { "application/json" } else if rel.ends_with(".vpk") { "application/octet-stream" } else { "text/plain; charset=utf-8" };
+                    let ct = if rel.ends_with(".json") {
+                        "application/json"
+                    } else if rel.ends_with(".vpk") {
+                        "application/octet-stream"
+                    } else if rel.ends_with(".html") {
+                        "text/html; charset=utf-8"
+                    } else {
+                        "text/plain; charset=utf-8"
+                    };
                     respond(&mut stream, 200, ct, if method == "HEAD" { &[] } else { &b })
                 }
                 Err(_) => respond(&mut stream, 404, "text/plain", b"not found\n"),
@@ -140,7 +155,8 @@ fn publish(root: &Path, blob: &[u8], owner: &str) -> (u16, String) {
         let o = registry::dir_index(root, &n).first().map(|e| e.owner.clone()).unwrap_or_default();
         (n, o)
     }).collect();
-    let g = gate(&scratch, &prior, &names, owner);
+    let target = vard_pkg::registry::Registry::open("self", &root.to_string_lossy());
+    let g = gate(&scratch, &prior, &names, owner, Some(&target));
     let _ = std::fs::remove_dir_all(&scratch);
     if !g.ok {
         return (422, g.report);

@@ -173,6 +173,7 @@ pub fn link(prog: &mut Program, sources: &Sources, info: &LinkInfo, diags: &mut 
     let mut l = Linker { pkgs, file_owner, root_vis, pkg_vis, decls: HashMap::new(), internal: HashMap::new(), scopes: Vec::new(), diags };
     l.collect(prog);
     l.rename_decls(prog);
+    l.member_migrations(prog);
     l.walk(prog);
 }
 
@@ -387,6 +388,19 @@ impl Linker<'_> {
             None => {
                 self.diags.push(d.help(format!("its API: `vard doc {}`", pkg)));
                 Some(None)
+            }
+        }
+    }
+
+    /// `[[migrate]] from = "Type.member"` where Type is an enum or a struct of the package.
+    fn member_migrations(&self, p: &mut Program) {
+        for (q, pk) in self.pkgs.iter().enumerate() {
+            for m in &pk.migrations {
+                let (Some((ty, from)), Some((_, to))) = (m.from.split_once('.'), m.to.split_once('.').or(Some(("", m.to.as_str())))) else { continue };
+                let is_member_type = self.decls.get(ty).is_some_and(|ds| ds.iter().any(|d| d.owner == Owner::Pkg(q) && matches!(d.kind, DK::Enum | DK::Struct)));
+                if is_member_type {
+                    p.member_migrations.push(MemberMigration { ty: self.iname(Owner::Pkg(q), ty), from: from.into(), to: to.into(), pkg: pk.name.clone(), since: m.since.clone() });
+                }
             }
         }
     }
@@ -702,8 +716,34 @@ impl Linker<'_> {
                 self.expr(p, b, o);
                 self.expr(p, c, o);
             }
-            Expr::Call { callee, args } => {
+            Expr::Call { callee, mut args } => {
                 self.expr(p, callee, o);
+                // constructing a struct of a dependency: renamed fields are fixed like view params
+                if let Expr::Ident(n) = p.expr(callee).clone() {
+                    let target = self.decls.iter().find_map(|(decl, ds)| {
+                        ds.iter().find(|d| d.kind == DK::Struct && self.iname(d.owner, decl) == n).map(|d| (d.owner, decl.clone()))
+                    });
+                    if let Some((Owner::Pkg(q), sname)) = target {
+                        if Owner::Pkg(q) != o {
+                            let mut changed = false;
+                            for a in args.iter_mut() {
+                                let Some(an) = a.name.clone() else { continue };
+                                if let Some(m) = self.prop_migration(q, &sname, &an) {
+                                    let to = m.to.rsplit('.').next().unwrap_or(&m.to).to_string();
+                                    self.diags.push(
+                                        Diag::error("E0234", a.name_span, format!("field `{}` of `{}` was renamed to `{}` in {} {}", an, sname, to, self.pkgs[q].name, m.since))
+                                            .fix(a.name_span, to.clone()),
+                                    );
+                                    a.name = Some(to);
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                p.exprs[e as usize] = Expr::Call { callee, args: args.clone() };
+                            }
+                        }
+                    }
+                }
                 for a in args {
                     self.expr(p, a.value, o);
                 }

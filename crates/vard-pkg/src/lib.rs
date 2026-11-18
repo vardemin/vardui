@@ -10,6 +10,7 @@
 //! (`vard explain P008`), the file line when there is one, and a fix when it is knowable.
 
 pub mod builtin;
+pub mod git;
 pub mod log;
 pub mod lock;
 pub mod manifest;
@@ -68,6 +69,49 @@ pub fn render_all(ps: &[Problem], file: &str) -> String {
     ps.iter().map(|p| p.render(file)).collect()
 }
 
+/// New packages are quarantined this long after their first version (see `P024`).
+pub const QUARANTINE_SECS: u64 = 72 * 3600;
+
+/// Seconds since the Unix epoch (UTC).
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `2026-11-19T08:30:00Z`
+pub fn rfc3339(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let rem = secs % 86400;
+    // civil from days (Howard Hinnant)
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// Inverse of [`rfc3339`] (UTC `Z` timestamps only).
+pub fn parse_rfc3339(s: &str) -> Option<u64> {
+    let s = s.strip_suffix('Z')?;
+    let (date, time) = s.split_once('T')?;
+    let mut dp = date.split('-').map(|x| x.parse::<i64>());
+    let (y, m, d) = (dp.next()?.ok()?, dp.next()?.ok()?, dp.next()?.ok()?);
+    let mut tp = time.split(':').map(|x| x.parse::<i64>());
+    let (hh, mm, ss) = (tp.next()?.ok()?, tp.next()?.ok()?, tp.next()?.ok()?);
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Some((days * 86400 + hh * 3600 + mm * 60 + ss) as u64)
+}
+
 pub fn sha256_hex(data: &[u8]) -> String {
     let d = Sha256::digest(data);
     d.iter().map(|b| format!("{:02x}", b)).collect()
@@ -96,6 +140,9 @@ pub const EXPLAIN: &[(&str, &str)] = &[
     ("P019", "The package archive is too large (8 MB limit). Ship code, docs and small assets; fetch big media at runtime."),
     ("P020", "vard.toml is not valid TOML (the subset Vard uses: [tables], key = \"string\" | 123 | true | [..] | { .. })."),
     ("P021", "A field of vard.toml has a wrong value or is unknown. The message names the field and the expected form."),
+    ("P023", "Behavior changed in a minor/patch release: the previous version's example tests fail against the new version. Those tests are what consumers relied on. Restore the old behavior, or publish the change as a new major version (then the old tests only warn)."),
+    ("P024", "The package is new: its first version was published less than 72 hours ago. Fresh packages are where typosquats and look-alikes live, so a person confirms them: check the author and the source (`vard info NAME` shows provenance), then `vard add NAME --allow-new`. Agents should ask the user instead."),
+    ("P025", "A git dependency could not be fetched or its tag/rev/branch does not exist. Check the URL (any URL git understands, or a local path relative to vard.toml) and the reference; private repositories use your git credentials. vard.lock pins the commit, so a project keeps building from the cache when the remote is gone."),
     ("P022", "The project's packages are missing or out of date. `vard install` resolves vard.toml, fetches and verifies packages and rewrites vard.lock."),
 ];
 

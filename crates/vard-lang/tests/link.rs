@@ -155,3 +155,18 @@ view App {
     let caps: Vec<String> = api::capabilities(&c, None).into_keys().collect();
     assert_eq!(caps, vec!["native", "network", "prefs", "push", "secure"]);
 }
+
+#[test]
+fn enum_variant_and_struct_field_migrations() {
+    let ui = "enum Kind { solid, ghost }\nstruct Note { id: Int, text: String = \"\" }\nview Tag(label: String, kind: Kind = .solid) { Text(label) }\n";
+    let mig = |from: &str, to: &str| Migration { since: "2.0.0".into(), from: from.into(), to: to.into() };
+    let info = LinkInfo {
+        root_deps: Some(vec!["ui".into()]),
+        packages: vec![PkgLink { name: "ui".into(), version: "2.0.0".into(), deps: Some(vec![]), migrations: vec![mig("Kind.outline", "Kind.ghost"), mig("Note.body", "Note.text")] }],
+    };
+    let app = "view App {\n  let n = Note(id: 1, body: \"x\")\n  Column {\n    Tag(\"a\", kind: .outline)\n    Text(n.body)\n  }\n}\n";
+    let c = compile_linked(&files(&[("@ui/ui.vard", ui), ("app.vard", app)]), Some(&info));
+    assert_eq!(codes(&c), vec!["E0234", "E0234", "E0234"], "{}", c.render_diags());
+    let fixes: Vec<String> = c.diags.iter().map(|d| d.fix.as_ref().unwrap().replacement.clone()).collect();
+    assert_eq!(fixes, vec!["text", ".ghost", "text"]);
+}

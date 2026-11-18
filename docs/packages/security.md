@@ -11,6 +11,7 @@ approved, and (3) nobody between the author and the device can substitute the co
 |---|---|---|
 | The agent "remembered" a non-existent name; an attacker registered it (slopsquatting) | `vard add` installs exact names only; a miss gets "did you mean" from the real catalog, never an automatic substitution; the MCP tool description requires searching, not guessing | `P001` |
 | Typosquatting (`tailwnd`, `charts` ↔ `chart`) | the registry refuses a name one edit away from an existing name of another owner, and reserved words | `P010` |
+| A freshly registered malicious package | quarantine: a remote package whose first version is younger than 72 h needs `--allow-new` (not available through MCP); search and the web page mark it NEW | `P024` |
 | A package silently gains access to secrets, permissions, the network, native code | the compiler computes capabilities; the manifest must match; sensitive ones need `[policy] allow`; the MCP tool cannot approve | `P013`, `P008` |
 | An update gives a package a new capability | `vard.lock` stores `caps=`; the change is a `!` line in the report and in the diff; without approval installation is refused | `P008` |
 | A private registry's dependency replaced by a public one (dependency confusion) | a dependency comes from exactly one registry; where it resolved is recorded in the author's index entry | — |
@@ -20,7 +21,9 @@ approved, and (3) nobody between the author and the device can substitute the co
 | History rewritten (an old version quietly replaced) | the log is a hash chain; the client checks that the head it saw is a prefix; versions are immutable | `P005`, `P016` |
 | A package breaks other code by "capturing" names | your own names win; transitive dependencies are invisible; a conflict of two packages needs explicit qualification | `E0231`, `E0232` |
 | Two packages claim one native function | native names are global, a conflict is a compile error | `E0233` |
-| A false "backward compatible" | semver is computed from the API diff | `P015` |
+| A false "backward compatible" | semver is computed from the API diff, and the previous version's tests must pass against a minor/patch release | `P015`, `P023` |
+| A registry key must change (compromise, hygiene) | signed rotation records: clients follow the chain from the key they trust and re-pin; unsigned changes stay errors | `P005` |
+| Where did this archive come from? | every version records its publication time and provenance (CI repository, commit, run) | — |
 | A malicious package with deliberately broken tests etc. | the gate runs on the server: compile, headless tests, size limit | `P012`, `P014`, `P019` |
 | Prompt injection through a package's docs | AGENT.md is limited to 6 KB; the skill and the project's AGENTS.md tell the agent never to approve capabilities by itself; approval happens only through `vard.toml`, which a person reviews | — |
 | A leaked publish token | only `sha256(token)` is stored; a token is bound to its owner; yank to withdraw versions | `P018` |

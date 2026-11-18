@@ -30,6 +30,7 @@ Variants:
 vard add charts@1.4                 # minimum version 1.4.0 on the 1.x line
 vard add auth --registry acme       # from a specific registry
 vard add ui --path ../ui            # a local package (monorepo)
+vard add charts --git https://github.com/acme/charts --tag v1.4.0   # straight from git
 vard add firebase --allow native    # approving a sensitive capability
 vard remove charts
 ```
@@ -54,6 +55,8 @@ legacy = "0.3"                                 # 0.x: the 0.3.* line (as in Carg
 exact = "=2.1.3"                               # exactly this version
 auth = { version = "2", registry = "acme" }    # from the acme registry
 ui = { path = "../ui" }                        # a local package
+widgets = { git = "https://github.com/acme/widgets", tag = "v2.1.0" }
+mono = { git = "../monorepo", branch = "main", dir = "packages/mono" }   # rev = "…" also works
 
 [policy]
 allow = ["native", "push"]                     # approved sensitive capabilities
@@ -74,6 +77,32 @@ the toolchain, available offline). The default registry is `vard` unless `defaul
 makes `builtin` the default. Each dependency comes from
 **exactly one** registry — its own `registry = ...` or the default — never "wherever it was
 found": this rules out dependency confusion attacks.
+
+## Git dependencies
+
+`{ git = URL, tag | rev | branch = "...", dir = "sub/dir" }` takes a package straight from a
+repository — any URL `git` understands, or a local path relative to `vard.toml`. The commit
+the reference resolves to is pinned in `vard.lock` together with the content hash of the
+package files, so a branch does not move under the project until `vard update NAME`
+re-resolves it:
+
+```text
+$ vard update charts
+~ charts 1.0.0 -> 1.1.0 (git 3f2a9c1e0b7d -> 8c41d0a2e9f3)
+```
+
+Git packages go through the same capability policy as registry packages. A package that
+depends on a git (or path) package cannot be published to a registry (`P021`): registries
+only reference registry versions.
+
+## New packages are quarantined
+
+A package from a remote registry whose **first** version was published less than 72 hours ago
+is not installed without `--allow-new` (`P024`). Fresh packages are where look-alikes and
+typosquats live, so a person confirms them after a look at `vard info NAME` (owner,
+publication time, provenance — which CI run built the archive). `vard search` and the
+registry's web page mark such packages `NEW`. The MCP tool `vard_add` has no
+`--allow-new`: an agent asks the user. Directory registries (your own) are not quarantined.
 
 ## vard.lock
 

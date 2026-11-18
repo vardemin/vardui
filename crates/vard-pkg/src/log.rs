@@ -80,6 +80,33 @@ pub fn keygen() -> Result<(String, String), String> {
     Ok((hex(&seed), hex(sk.verifying_key().as_bytes())))
 }
 
+/// The public key of a secret seed.
+pub fn public_of(secret_hex: &str) -> Result<String, String> {
+    let seed: [u8; 32] = unhex(secret_hex.trim()).and_then(|v| v.try_into().ok()).ok_or("bad registry key file")?;
+    Ok(hex(SigningKey::from_bytes(&seed).verifying_key().as_bytes()))
+}
+
+/// What the old key signs to hand the registry over to the new key.
+pub fn rotation_message(old: &str, new: &str) -> String {
+    format!("vard-key-rotation/1 {} {}", old, new)
+}
+
+/// Follow signed rotations (`(from, to, sig)`, each signed by `from`) from `trusted` to
+/// `current`. `true` when `current` is `trusted` or reachable through valid signatures.
+pub fn rotation_chain_ok(trusted: &str, current: &str, rotations: &[(String, String, String)]) -> bool {
+    let mut cur = trusted.to_string();
+    for _ in 0..=rotations.len() {
+        if cur == current {
+            return true;
+        }
+        match rotations.iter().find(|(f, t, s)| *f == cur && verify(f, &rotation_message(f, t), s)) {
+            Some((_, t, _)) => cur = t.clone(),
+            None => return false,
+        }
+    }
+    false
+}
+
 pub fn sign(secret_hex: &str, msg: &str) -> Result<String, String> {
     let seed: [u8; 32] = unhex(secret_hex.trim()).and_then(|v| v.try_into().ok()).ok_or("bad registry key file")?;
     Ok(hex(&SigningKey::from_bytes(&seed).sign(msg.as_bytes()).to_bytes()))
@@ -117,6 +144,21 @@ pub fn verify_log(log_text: &str, head_text: &str, pub_hex: &str) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_rotation_chain() {
+        let (s1, p1) = keygen().unwrap();
+        let (s2, p2) = keygen().unwrap();
+        let (_, p3) = keygen().unwrap();
+        let r12 = (p1.clone(), p2.clone(), sign(&s1, &rotation_message(&p1, &p2)).unwrap());
+        let r23 = (p2.clone(), p3.clone(), sign(&s2, &rotation_message(&p2, &p3)).unwrap());
+        assert!(rotation_chain_ok(&p1, &p3, &[r23.clone(), r12.clone()]));
+        assert!(rotation_chain_ok(&p2, &p3, &[r12.clone(), r23.clone()]));
+        // a rotation signed by the wrong key does not count
+        let forged = (p1.clone(), p3.clone(), sign(&s2, &rotation_message(&p1, &p3)).unwrap());
+        assert!(!rotation_chain_ok(&p1, &p3, &[forged]));
+        assert!(!rotation_chain_ok(&p3, &p1, &[r12, r23]));
+    }
 
     #[test]
     fn signed_chain() {

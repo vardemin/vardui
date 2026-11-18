@@ -48,7 +48,7 @@ pub fn entry_from_files(files: &[(String, Vec<u8>)]) -> Result<IndexEntry, Strin
             .iter()
             .filter_map(|d| match &d.source {
                 crate::manifest::DepSource::Registry(r) => Some(DepSpec { name: d.name.clone(), req: d.req.as_ref().map(|r| r.to_string()).unwrap_or_default(), registry: r.clone() }),
-                crate::manifest::DepSource::Path(_) => None,
+                crate::manifest::DepSource::Path(_) | crate::manifest::DepSource::Git { .. } => None,
             })
             .collect(),
         caps,
@@ -61,6 +61,8 @@ pub fn entry_from_files(files: &[(String, Vec<u8>)]) -> Result<IndexEntry, Strin
         tested_with: VARD_VERSION.to_string(),
         owner: "vard".into(),
         yanked: false,
+        published: String::new(),
+        provenance: None,
     })
 }
 

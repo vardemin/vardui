@@ -11,6 +11,7 @@ vard info charts                   # versions, caps, full API, tests — before 
 vard add charts                    # exact names only; writes vard.toml + vard.lock
 vard add charts@1.4                # minimum version 1.4.0 (line 1.x)
 vard add ui --path ../ui           # a local package (monorepo)
+vard add w --git URL --tag v1.2.0  # from git (or --rev/--branch, --dir sub/dir); commit pinned in vard.lock
 vard doc charts                    # its AGENT.md + generated API: read this before using it
 vard update [charts] [--major]     # newer versions + API diff; then `vard check --fix`
 vard remove charts
@@ -24,8 +25,10 @@ vard remove charts
 - `P008` = the package needs a sensitive capability (secure, permissions, push, native,
   network). Do not work around it: tell the user what it needs and why (`vard info NAME`);
   a person approves by adding it to `[policy] allow` (or `vard add NAME --allow native`).
-- `E0234` after an update = a renamed name/param; `vard check --fix` applies the package's
-  migration.
+- `E0234` after an update = a renamed name/param/enum variant/struct field; `vard check --fix`
+  applies the package's migration.
+- `P024` = the package is new (first published < 72h ago): ask the user; they confirm with
+  `vard add NAME --allow-new` after checking `vard info NAME` (owner, provenance).
 - Package externs answer headless from the package's `[sim]`; override with `mock`/`resolve`.
 - Diagnostics in package files are shown as `@name/file.vard:LINE`; never edit them (they
   are read-only inputs); fix your code or change the version.
@@ -86,11 +89,13 @@ currentUser = 'null'
 since = "2.0.0"
 from = "BarChart.max"           # a view param; or a top-level name: from = "Chart"
 to = "BarChart.scale"
+# from = "Style.outline" / to = "Style.ghost" renames an enum variant or a struct field
 ```
 Prefix private helpers with `_`. Keep exported names distinctive (they share the app's
 namespace). `vard api` shows the public API; `vard publish --dry-run --registry R` runs the
 gate: compiles with deps, capabilities, tests (example/ included), semver vs the previous
-version (removing/changing = major, adding = minor), AGENT.md budget, name policy.
+version (removing/changing = major, adding = minor), the previous version's example tests
+against a minor/patch release (P023), AGENT.md budget, name policy.
 
 ## Registries and delivery
 - `vard registry init DIR` — static registry: `public/` (config.json, catalog.json,

@@ -49,6 +49,10 @@ pub struct IndexEntry {
     pub tested_with: String,
     pub owner: String,
     pub yanked: bool,
+    /// RFC 3339 UTC time of publication (empty for entries from before it was recorded)
+    pub published: String,
+    /// where the archive was built: `{"repository", "commit", "run"}` (CI) or `{"builder": "local"}`
+    pub provenance: Option<Value>,
 }
 
 pub fn api_to_json(items: &[ApiItem]) -> Value {
@@ -121,6 +125,7 @@ impl IndexEntry {
             "api": api_to_json(&self.api), "doc_bytes": self.doc_bytes,
             "tests": self.tests.map(|(p, f)| json!({ "passed": p, "failed": f })),
             "tested_with": self.tested_with, "owner": self.owner, "yanked": self.yanked,
+            "published": self.published, "provenance": self.provenance,
         })
     }
 
@@ -157,6 +162,8 @@ impl IndexEntry {
             tested_with: s("tested_with").unwrap_or_default(),
             owner: s("owner").unwrap_or_default(),
             yanked: v.get("yanked").and_then(|x| x.as_bool()).unwrap_or(false),
+            published: s("published").unwrap_or_default(),
+            provenance: v.get("provenance").filter(|p| !p.is_null()).cloned(),
         })
     }
 }
@@ -171,6 +178,8 @@ pub struct CatalogEntry {
     pub caps: Vec<String>,
     pub exports: Vec<String>,
     pub tests: Option<(u32, u32)>,
+    /// first publication of the package (RFC 3339), for the "new" marker
+    pub since: String,
 }
 
 impl CatalogEntry {
@@ -183,11 +192,12 @@ impl CatalogEntry {
             caps: e.caps.clone(),
             exports: e.api.iter().filter(|i| i.kind != "token").map(|i| i.name.clone()).collect(),
             tests: e.tests,
+            since: e.published.clone(),
         }
     }
     fn to_json(&self) -> Value {
         json!({ "name": self.name, "latest": self.latest, "summary": self.summary, "keywords": self.keywords, "caps": self.caps, "exports": self.exports,
-                "tests": self.tests.map(|(p, f)| json!({ "passed": p, "failed": f })) })
+                "tests": self.tests.map(|(p, f)| json!({ "passed": p, "failed": f })), "since": self.since })
     }
     fn from_json(v: &Value) -> Option<CatalogEntry> {
         Some(CatalogEntry {
@@ -198,6 +208,7 @@ impl CatalogEntry {
             caps: strs(v, "caps"),
             exports: strs(v, "exports"),
             tests: v.get("tests").and_then(|t| Some((t.get("passed")?.as_u64()? as u32, t.get("failed")?.as_u64()? as u32))),
+            since: v.get("since").and_then(|s| s.as_str()).unwrap_or("").to_string(),
         })
     }
 }
@@ -260,6 +271,11 @@ impl Registry {
     /// absolute directory.
     pub fn location(&self) -> String {
         self.identity()
+    }
+
+    /// Served over http(s): someone else's registry (quarantine applies).
+    pub fn is_remote(&self) -> bool {
+        matches!(self.kind, Kind::Http(_))
     }
 
     pub fn is_builtin(&self) -> bool {
@@ -358,8 +374,13 @@ impl Registry {
         let cfg = self.fetch("config.json").map_err(|e| self.problem(e))?.ok_or_else(|| self.problem("no config.json"))?;
         let cfg: Value = serde_json::from_slice(&cfg).map_err(|_| self.problem("config.json is not JSON"))?;
         let key = cfg.get("key").and_then(|k| k.as_str()).ok_or_else(|| self.problem("config.json has no signing key"))?.to_string();
+        let rotations: Vec<(String, String, String)> = cfg
+            .get("rotations")
+            .and_then(|r| r.as_array())
+            .map(|a| a.iter().filter_map(|r| Some((r.get("from")?.as_str()?.to_string(), r.get("to")?.as_str()?.to_string(), r.get("sig")?.as_str()?.to_string()))).collect())
+            .unwrap_or_default();
         let id = self.identity();
-        pin_key(&id, &key)?;
+        pin_key(&id, &key, &rotations)?;
         let log_text = String::from_utf8_lossy(&self.fetch("log.txt").map_err(|e| self.problem(e))?.unwrap_or_default()).to_string();
         let head = String::from_utf8_lossy(&self.fetch("log.head").map_err(|e| self.problem(e))?.unwrap_or_default()).to_string();
         let entries = log::verify_log(&log_text, &head, &key).map_err(|e| Problem::new("P005", format!("registry `{}`: {}", self.name, e)))?;
@@ -400,14 +421,16 @@ pub fn parse_index(text: &str) -> Vec<IndexEntry> {
 }
 
 /// Trust on first use, then never silently: a changed key is an error (like SSH).
-fn pin_key(id: &str, key: &str) -> Result<(), Problem> {
+/// `rotations`: `(from, to, signature by from)` from config.json — a key change is accepted
+/// only along such a chain from the key this client already trusts.
+fn pin_key(id: &str, key: &str, rotations: &[(String, String, String)]) -> Result<(), Problem> {
     // the public registry's key ships inside the binary: no trust-on-first-use window
     if id == crate::PUBLIC_REGISTRY_URL {
-        return if key == crate::PUBLIC_REGISTRY_KEY {
+        return if log::rotation_chain_ok(crate::PUBLIC_REGISTRY_KEY, key, rotations) {
             Ok(())
         } else {
-            Err(Problem::new("P005", format!("{} presents signing key {}…, but this vard expects {}…", id, &key[..8.min(key.len())], &crate::PUBLIC_REGISTRY_KEY[..8]))
-                .fix("someone is impersonating the public registry, or it rotated its key: update vard"))
+            Err(Problem::new("P005", format!("{} presents signing key {}…, which no signed rotation links to the key built into vard ({}…)", id, &key[..8.min(key.len())], &crate::PUBLIC_REGISTRY_KEY[..8]))
+                .fix("someone may be impersonating the public registry; do not install from it until this is resolved"))
         };
     }
     let path = net::home().join("known_registries");
@@ -416,6 +439,11 @@ fn pin_key(id: &str, key: &str) -> Result<(), Problem> {
         if let Some((u, k)) = line.rsplit_once(' ') {
             if u == id {
                 return if k == key {
+                    Ok(())
+                } else if log::rotation_chain_ok(k, key, rotations) {
+                    // a signed handover: trust the new key from now on
+                    let updated: String = text.lines().map(|l| if l == line { format!("{} {}\n", id, key) } else { format!("{}\n", l) }).collect();
+                    let _ = std::fs::write(&path, updated);
                     Ok(())
                 } else {
                     Err(Problem::new("P005", format!("the signing key of registry {} changed (pinned {}…, now {}…)", id, &k[..8.min(k.len())], &key[..8.min(key.len())]))
@@ -450,6 +478,10 @@ fn check_prefix(id: &str, entries: &[LogEntry]) -> Result<(), Problem> {
 
 // ---------------- the write side (directory registries) ----------------
 
+/// The registry's web page (search, versions, capabilities, API, provenance), served next
+/// to the files it reads. Written by `init`, and by `append` when missing.
+pub const INDEX_HTML: &str = include_str!("registry_index.html");
+
 /// Create a registry in `root`: `public/` (serve or sync this anywhere) and `private/`
 /// (the signing key and owner tokens — never publish it). Returns the public key.
 pub fn init(root: &Path, name: &str) -> Result<String, String> {
@@ -466,9 +498,39 @@ pub fn init(root: &Path, name: &str) -> Result<String, String> {
     w(root.join("private").join("tokens"), String::new())?;
     w(public.join("config.json"), format!("{}\n", json!({ "vard_registry": 1, "name": name, "key": key })))?;
     w(public.join("catalog.json"), "[]\n".into())?;
+    w(public.join("index.html"), INDEX_HTML.into())?;
     w(public.join("log.txt"), String::new())?;
     w(public.join("log.head"), format!("0 {} {}\n", log::ZERO, log::sign(&secret, &log::head_message(0, log::ZERO))?))?;
     Ok(key)
+}
+
+/// Hand the registry over to a new signing key: the old key signs the rotation (kept in
+/// config.json so clients that pinned it follow the chain), the log head is re-signed, and
+/// the old secret is kept as `private/registry.key.<old>.old`. Returns (old, new) public keys.
+pub fn rotate_key(root: &Path) -> Result<(String, String), String> {
+    let kpath = root.join("private").join("registry.key");
+    let old_secret = std::fs::read_to_string(&kpath).map_err(|_| format!("{}: no private/registry.key", root.display()))?;
+    let old = log::public_of(&old_secret)?;
+    let (new_secret, new) = log::keygen()?;
+    let public = public_dir(root);
+    let cpath = public.join("config.json");
+    let mut cfg: Value = serde_json::from_str(&std::fs::read_to_string(&cpath).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    if cfg.get("key").and_then(|k| k.as_str()) != Some(old.as_str()) {
+        return Err("private/registry.key does not match public/config.json".into());
+    }
+    let sig = log::sign(&old_secret, &log::rotation_message(&old, &new))?;
+    let mut rot = cfg.get("rotations").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+    rot.push(json!({ "from": old, "to": new, "sig": sig }));
+    cfg["key"] = json!(new);
+    cfg["rotations"] = Value::Array(rot);
+    std::fs::write(root.join("private").join(format!("registry.key.{}.old", &old[..8])), &old_secret).map_err(|e| e.to_string())?;
+    std::fs::write(&kpath, &new_secret).map_err(|e| e.to_string())?;
+    std::fs::write(&cpath, format!("{}\n", cfg)).map_err(|e| e.to_string())?;
+    let entries = log::parse(&std::fs::read_to_string(public.join("log.txt")).unwrap_or_default())?;
+    let size = entries.len() as u64;
+    let head = entries.last().map(|e| e.chain.clone()).unwrap_or_else(|| log::ZERO.to_string());
+    std::fs::write(public.join("log.head"), format!("{} {} {}\n", size, head, log::sign(&new_secret, &log::head_message(size, &head))?)).map_err(|e| e.to_string())?;
+    Ok((old, new))
 }
 
 /// A new publish token for `owner` (printed once; only its hash is stored).
@@ -521,6 +583,9 @@ pub fn append(root: &Path, entry: &IndexEntry, blob: &[u8]) -> Result<LogEntry, 
     std::fs::write(public.join("log.txt"), format!("{}{}", log_text, log::line(&le))).map_err(|e| e.to_string())?;
     std::fs::write(public.join("log.head"), format!("{} {} {}\n", seq, le.chain, log::sign(&secret, &log::head_message(seq, &le.chain))?)).map_err(|e| e.to_string())?;
     rebuild_catalog(root)?;
+    if !public.join("index.html").exists() {
+        std::fs::write(public.join("index.html"), INDEX_HTML).map_err(|e| e.to_string())?;
+    }
     Ok(le)
 }
 
@@ -545,7 +610,9 @@ fn rebuild_catalog(root: &Path) -> Result<(), String> {
             .filter(|e| !e.yanked)
             .max_by(|a, b| crate::semver::Version::parse(&a.version).ok().cmp(&crate::semver::Version::parse(&b.version).ok()));
         if let Some(e) = latest {
-            rows.push(CatalogEntry::of(e).to_json());
+            let mut row = CatalogEntry::of(e);
+            row.since = entries.iter().map(|x| x.published.clone()).filter(|p| !p.is_empty()).min().unwrap_or_default();
+            rows.push(row.to_json());
         }
     }
     let text = format!("[\n{}\n]\n", rows.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(",\n"));

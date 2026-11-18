@@ -41,6 +41,7 @@ reg/
     blobs/<sha256>.vpk    immutable archives
     log.txt               the publication log (hash chain)
     log.head              size, chain head, ed25519 signature
+    index.html            the registry's web page: search, versions, capabilities, API, provenance
   private/                ← never publish this
     registry.key          the signing key
     tokens                sha256(token) owner
@@ -63,7 +64,9 @@ An index line:
  "deps":[{"name":"tailwind","req":"1.0","registry":"builtin"}],
  "caps":[],"android":null,"summary":"Bar charts drawn with Vard elements","keywords":["chart"],
  "api":[{"kind":"view","name":"BarChart","params":[{"name":"values","ty":"[Int]","default":null,"bind":false}]}],
- "doc_bytes":78,"tests":{"passed":1,"failed":0},"tested_with":"0.1.0","owner":"alice","yanked":false}
+ "doc_bytes":78,"tests":{"passed":1,"failed":0},"tested_with":"0.3.0","owner":"alice","yanked":false,
+ "published":"2026-11-19T08:30:00Z",
+ "provenance":{"builder":"github-actions","repository":"https://github.com/vardemin/vard-registry","commit":"…","run":"…/actions/runs/…"}}
 ```
 
 `api` is the full public API computed by the compiler at publish: `vard info`, search by
@@ -93,6 +96,28 @@ On first contact with a registry the client:
    matches — `P004`.
 
 `vard registry verify DIR|URL` verifies a whole registry: signatures, chain and every archive.
+
+### Rotating the key
+
+```bash
+vard registry rotate-key ./reg
+```
+
+The old key signs a rotation record `{from, to, sig}` that stays in `config.json`; the log
+head is re-signed with the new key, and the old secret is kept as
+`private/registry.key.<id>.old`. A client that trusts the old key (pinned, or compiled in for
+the public registry) follows the chain of signed rotations to the current key and re-pins it
+silently; a key that no signed rotation links to is still `P005`. After rotating, publish
+`public/` and update the CI secret with the new `private/registry.key`.
+
+## The web page
+
+Every registry gets `public/index.html` (written by `vard registry init`, added by the next
+publish to older registries): a single static page, no external scripts, that reads
+`catalog.json` and `index/NAME.json`. It shows search over names, keywords, summaries and
+exports; capabilities with sensitive ones highlighted; publish-time test results; versions
+with publication time, yank status and provenance; the generated API; and the
+`vard add NAME` command. `vard registry serve` serves it at `/`.
 
 ## Hosting
 

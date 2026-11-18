@@ -8,7 +8,8 @@
 //! shows the API diff). A Vard app links one version of each package, so all
 //! requirements of one package must meet on one line (`P006` otherwise).
 
-use crate::manifest::{DepSource, Manifest};
+use crate::lock::Lock;
+use crate::manifest::{DepSource, GitRef, Manifest};
 use crate::registry::{IndexEntry, Registry};
 use crate::semver::{Req, Version};
 use crate::{Problem, VARD_VERSION};
@@ -101,6 +102,18 @@ impl Registries {
 pub enum Src {
     Registry(String),
     Path(PathBuf),
+    /// a git checkout: the package directory inside the exported commit
+    Git { url: String, commit: String, reference: GitRef, dir: Option<String>, path: PathBuf },
+}
+
+impl Src {
+    /// The package's files on disk (path and git packages).
+    pub fn local_dir(&self) -> Option<&Path> {
+        match self {
+            Src::Path(p) | Src::Git { path: p, .. } => Some(p),
+            Src::Registry(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -148,8 +161,21 @@ pub fn not_found(reg: &Registry, name: &str) -> Problem {
     p.fix(format!("search instead of guessing: vard search {}", name))
 }
 
-/// Resolve the dependency graph of the project in `dir`.
-pub fn resolve(dir: &Path, root: &Manifest, regs: &Registries) -> Result<Vec<Selected>, Problem> {
+/// A package found in a directory (path and git sources).
+fn local_package(name: &str, pdir: &Path, by: &str) -> Result<(Manifest, Version), Problem> {
+    let text = std::fs::read_to_string(pdir.join("vard.toml")).map_err(|_| Problem::new("P022", format!("dependency `{}` of {}: no vard.toml in {}", name, by, pdir.display())))?;
+    let m = Manifest::parse(&text.replace("\r\n", "\n")).map_err(|ps| Problem::new("P021", format!("{}/vard.toml: {}", pdir.display(), ps[0].msg)))?;
+    let pk = m.package.clone().ok_or_else(|| Problem::new("P021", format!("{} has no [package]", pdir.join("vard.toml").display())))?;
+    if pk.name != name {
+        return Err(Problem::new("P021", format!("dependency `{}` points at package `{}` ({})", name, pk.name, pdir.display())));
+    }
+    let version = pk.version.clone().unwrap_or(Version::new(0, 0, 0));
+    Ok((m, version))
+}
+
+/// Resolve the dependency graph of the project in `dir`. Git dependencies reuse the commit
+/// `locked` pins (same URL and reference) unless their name is in `refresh` (`vard update`).
+pub fn resolve(dir: &Path, root: &Manifest, regs: &Registries, locked: &Lock, refresh: &[String]) -> Result<Vec<Selected>, Problem> {
     let mut queue: Vec<Need> = root.deps.iter().map(|d| Need { name: d.name.clone(), req: d.req.clone(), source: d.source.clone(), base: dir.to_path_buf(), by: root.name().to_string() }).collect();
     queue.reverse();
     // every (name, version) reached, with its data
@@ -158,17 +184,28 @@ pub fn resolve(dir: &Path, root: &Manifest, regs: &Registries) -> Result<Vec<Sel
         let sel = match &n.source {
             DepSource::Path(p) => {
                 let pdir = n.base.join(p);
-                let text = std::fs::read_to_string(pdir.join("vard.toml")).map_err(|_| Problem::new("P022", format!("path dependency `{}`: no vard.toml in {}", n.name, pdir.display())))?;
-                let m = Manifest::parse(&text).map_err(|ps| Problem::new("P021", format!("{}/vard.toml: {}", pdir.display(), ps[0].msg)))?;
-                let pk = m.package.clone().ok_or_else(|| Problem::new("P021", format!("{} has no [package]", pdir.join("vard.toml").display())))?;
-                if pk.name != n.name {
-                    return Err(Problem::new("P021", format!("dependency `{}` points at package `{}` ({})", n.name, pk.name, pdir.display())));
-                }
-                let version = pk.version.clone().unwrap_or(Version::new(0, 0, 0));
+                let (m, version) = local_package(&n.name, &pdir, &n.by)?;
                 for d in &m.deps {
                     queue.push(Need { name: d.name.clone(), req: d.req.clone(), source: d.source.clone(), base: pdir.clone(), by: n.name.clone() });
                 }
-                Selected { name: n.name.clone(), version, src: Src::Path(pdir), deps: m.deps.iter().map(|d| d.name.clone()).collect(), caps: pk.capabilities.clone(), entry: None, manifest: Some(m), wanted_by: vec![n.by.clone()] }
+                let caps = m.package.as_ref().map(|p| p.capabilities.clone()).unwrap_or_default();
+                Selected { name: n.name.clone(), version, src: Src::Path(pdir), deps: m.deps.iter().map(|d| d.name.clone()).collect(), caps, entry: None, manifest: Some(m), wanted_by: vec![n.by.clone()] }
+            }
+            DepSource::Git { url, reference, dir: sub } => {
+                let url = crate::git::absolute_url(url, &n.base);
+                let pin = locked.get(&n.name).and_then(|lp| crate::git::parse_src(&lp.src)).filter(|g| g.url == url && g.reference == reference.describe() && g.dir == *sub && !refresh.contains(&n.name)).map(|g| g.commit);
+                let (commit, export) = crate::git::checkout(&url, reference, pin.as_deref())?;
+                let pdir = match sub {
+                    Some(s) => export.join(s),
+                    None => export,
+                };
+                let (m, version) = local_package(&n.name, &pdir, &n.by)?;
+                for d in &m.deps {
+                    queue.push(Need { name: d.name.clone(), req: d.req.clone(), source: d.source.clone(), base: pdir.clone(), by: n.name.clone() });
+                }
+                let caps = m.package.as_ref().map(|p| p.capabilities.clone()).unwrap_or_default();
+                let src = Src::Git { url, commit, reference: reference.clone(), dir: sub.clone(), path: pdir };
+                Selected { name: n.name.clone(), version, src, deps: m.deps.iter().map(|d| d.name.clone()).collect(), caps, entry: None, manifest: Some(m), wanted_by: vec![n.by.clone()] }
             }
             DepSource::Registry(rname) => {
                 let reg = regs.get(rname.as_deref())?;
@@ -207,7 +244,7 @@ pub fn resolve(dir: &Path, root: &Manifest, regs: &Registries) -> Result<Vec<Sel
     for (name, mut versions) in reached {
         versions.sort_by(|a, b| a.version.cmp(&b.version));
         let lines: Vec<(u64, u64)> = versions.iter().map(|s| s.version.line()).collect();
-        let kinds = versions.iter().map(|s| matches!(s.src, Src::Path(_))).collect::<std::collections::BTreeSet<_>>();
+        let kinds = versions.iter().map(|s| std::mem::discriminant(&s.src)).collect::<std::collections::HashSet<_>>();
         if lines.windows(2).any(|w| w[0] != w[1]) || kinds.len() > 1 {
             let who: Vec<String> = versions.iter().map(|s| format!("{} wants {} {}", s.wanted_by.join(" & "), name, s.version.line_name())).collect();
             return Err(Problem::new("P006", format!("incompatible requirements for `{}`: {}", name, who.join("; "))));

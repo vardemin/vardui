@@ -990,6 +990,10 @@ impl<'a> Checker<'a> {
                         let vs = self.enums.get(en).cloned().unwrap_or_default();
                         if vs.iter().any(|v| v == name) {
                             self.dot_kinds.insert(e, DotKind::Enum);
+                        } else if let Some(m) = self.p.member_migrations.iter().find(|m| m.ty == *en && m.from == *name).cloned() {
+                            self.dot_kinds.insert(e, DotKind::Enum);
+                            let d = self.err("E0234", sp, format!("`.{}` of `{}` was renamed to `.{}` in {} {}", name, en, m.to, m.pkg, m.since));
+                            d.0.fix = Some(crate::diag::Fix { span: sp, replacement: format!(".{}", m.to) });
                         } else {
                             let sugg = closest(name, vs.iter().map(|s| s.as_str())).map(|s| s.to_string());
                             let list = vs.iter().map(|v| format!(".{}", v)).collect::<Vec<_>>().join(" ");
@@ -1295,6 +1299,14 @@ impl<'a> Checker<'a> {
         };
         if let Some(t) = found {
             return t;
+        }
+        if let Ty::Struct(s) = rt {
+            if let Some(m) = self.p.member_migrations.iter().find(|m| m.ty == *s && m.from == name).cloned() {
+                let ty = self.structs.get(s).and_then(|f| f.iter().find(|f| f.name == m.to)).map(|f| f.ty.clone()).unwrap_or(Ty::Unknown);
+                let d = self.err("E0234", nsp, format!("field `{}` of `{}` was renamed to `{}` in {} {}", name, s, m.to, m.pkg, m.since));
+                d.0.fix = Some(crate::diag::Fix { span: nsp, replacement: m.to.clone() });
+                return ty;
+            }
         }
         if let Ty::Opt(inner) = rt {
             self.err("E0314", nsp, format!("the value is {}? and may be nil; cannot read `.{}`", inner, name))

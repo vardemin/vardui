@@ -42,8 +42,8 @@ vard — AI-first UI framework toolchain
 
 packages
   vard search WORDS                      find packages (name, keywords, summary, exported names)
-  vard info NAME                         versions, capabilities, API, tests of a package
-  vard add NAME[@REQ] [--path DIR] [--registry R] [--allow CAPS]
+  vard info NAME [PATH]                  versions, capabilities, provenance, API, tests of a package
+  vard add NAME[@REQ] [--path DIR | --git URL [--tag T|--rev R|--branch B] [--dir D]] [--registry R] [--allow CAPS] [--allow-new]
                                          add a dependency (exact names only), install, update vard.lock
   vard remove NAME                       remove a dependency
   vard install [--allow CAPS]            resolve vard.toml, fetch + verify, write vard.lock
@@ -54,7 +54,8 @@ packages
                                          run the gate (compile, caps, tests, semver, docs) and publish
   vard yank NAME@VER --registry DIR [--undo]
   vard bundle [PATH] --out DIR|FILE.vpk  everything a device needs (+ bundle.json, native fingerprint)
-  vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr H:P] | verify DIR|URL
+  vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr H:P]
+                | rotate-key DIR | verify DIR|URL
 
   vard mcp                               MCP server on stdio
 
@@ -78,7 +79,7 @@ fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
 }
 
-const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--owner", "--name", "--addr"];
+const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--owner", "--name", "--addr", "--git", "--tag", "--rev", "--branch", "--dir"];
 
 /// Arguments that are not flags or flags' values.
 fn positionals(args: &[String]) -> Vec<&str> {
@@ -141,14 +142,17 @@ fn dispatch(args: &[String]) -> (String, bool) {
             None => ("usage: vard new NAME".into(), false),
         },
         "add" => match pos.first() {
-            Some(spec) => pkg::cmd_add(spec, pos.get(1).copied().unwrap_or("."), opt(rest, "--path"), opt(rest, "--registry"), &allow_list(rest)),
+            Some(spec) => {
+                let git = opt(rest, "--git").map(|url| pkg::GitSpec { url, tag: opt(rest, "--tag"), rev: opt(rest, "--rev"), branch: opt(rest, "--branch"), dir: opt(rest, "--dir") });
+                pkg::cmd_add(spec, pos.get(1).copied().unwrap_or("."), opt(rest, "--path"), git, opt(rest, "--registry"), &allow_list(rest), flag(rest, "--allow-new"))
+            }
             None => ("usage: vard add NAME[@REQ] [PATH] [--path DIR] [--registry R] [--allow CAPS]; find names: vard search WORDS".into(), false),
         },
         "remove" | "rm" => match pos.first() {
             Some(name) => pkg::cmd_remove(name, pos.get(1).copied().unwrap_or(".")),
             None => ("usage: vard remove NAME [PATH]".into(), false),
         },
-        "install" | "i" => pkg::cmd_install(positional(rest).unwrap_or("."), &allow_list(rest)),
+        "install" | "i" => pkg::cmd_install(positional(rest).unwrap_or("."), &allow_list(rest), flag(rest, "--allow-new")),
         "update" => {
             // `vard update` / `vard update NAME` / `vard update NAME PATH`
             let (name, dir) = match pos.as_slice() {
@@ -161,7 +165,7 @@ fn dispatch(args: &[String]) -> (String, bool) {
         }
         "search" => pkg::cmd_search(&pos.join(" "), "."),
         "info" => match pos.first() {
-            Some(n) => pkg::cmd_info(n, "."),
+            Some(n) => pkg::cmd_info(n, pos.get(1).copied().unwrap_or(".")),
             None => ("usage: vard info NAME".into(), false),
         },
         "api" => pkg::cmd_api(positional(rest).unwrap_or("."), flag(rest, "--caps")),

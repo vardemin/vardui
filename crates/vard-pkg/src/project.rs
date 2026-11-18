@@ -157,6 +157,7 @@ fn src_string(s: &Selected, project_dir: &Path, regs: &Registries) -> String {
             let rel = pathdiff(p, project_dir);
             format!("path:{}", rel)
         }
+        Src::Git { url, commit, reference, dir, .. } => crate::git::src_string(url, commit, reference, dir.as_deref()),
         Src::Registry(r) => {
             if regs.get(Some(r)).is_ok_and(|x| x.is_builtin()) {
                 "builtin".into()
@@ -227,9 +228,41 @@ pub struct InstallReport {
 /// Resolve vard.toml, check the capability policy, fetch + verify every package, write
 /// vard.lock, install package skills. `allow` adds capabilities for this run (`--allow`).
 pub fn install(p: &Project, allow: &[String]) -> Result<InstallReport, Problem> {
+    install_with(p, &InstallOpts { allow, ..Default::default() })
+}
+
+/// [`install`], re-resolving the git dependencies named in `refresh` instead of reusing the
+/// commits vard.lock pins (`vard update`).
+pub fn install_refreshing(p: &Project, allow: &[String], refresh: &[String]) -> Result<InstallReport, Problem> {
+    install_with(p, &InstallOpts { allow, refresh, ..Default::default() })
+}
+
+#[derive(Default)]
+pub struct InstallOpts<'a> {
+    /// capabilities approved for this run (`--allow`)
+    pub allow: &'a [String],
+    /// git dependencies to re-resolve (`vard update`)
+    pub refresh: &'a [String],
+    /// install packages that are still in quarantine (`--allow-new`, a person's decision)
+    pub allow_new: bool,
+}
+
+/// A package from a remote registry whose first version is younger than the quarantine.
+fn quarantined(reg: &crate::registry::Registry, name: &str) -> Option<String> {
+    if !reg.is_remote() {
+        return None;
+    }
+    let first = reg.index(name).ok()?.iter().filter_map(|e| crate::parse_rfc3339(&e.published)).min()?;
+    let age = crate::now_secs().saturating_sub(first);
+    (age < crate::QUARANTINE_SECS).then(|| crate::rfc3339(first))
+}
+
+pub fn install_with(p: &Project, o: &InstallOpts) -> Result<InstallReport, Problem> {
+    let (allow, refresh) = (o.allow, o.refresh);
     let m = p.manifest.clone().unwrap_or_default();
     let regs = p.registries();
-    let selected = resolve::resolve(&p.dir, &m, &regs)?;
+    let old = p.lock().unwrap_or_default();
+    let selected = resolve::resolve(&p.dir, &m, &regs, &old, refresh)?;
     let mut allowed = m.allow.clone();
     allowed.extend(allow.iter().cloned());
     let bad = resolve::policy_violations(&selected, &allowed);
@@ -244,14 +277,22 @@ pub fn install(p: &Project, allow: &[String]) -> Result<InstallReport, Problem> 
             if e.yanked {
                 return Err(Problem::new("P009", format!("{} {} is yanked", e.name, e.version)));
             }
+            if !o.allow_new && old.get(&e.name).is_none() {
+                if let Some(since) = quarantined(&reg, &e.name) {
+                    return Err(Problem::new("P024", format!("`{}` is new (first published {}, less than 72 hours ago) — fresh packages are confirmed by a person", e.name, since))
+                        .fix(format!("check `vard info {}` (owner, provenance), then: vard add {} --allow-new", e.name, e.name)));
+                }
+            }
             reg.check_logged(e)?;
             extract(&e.name, &e.version, &e.sha256, None, || reg.blob(e))?;
             lp.sha256 = Some(e.sha256.clone());
             lp.api = Some(api_hash(&e.api));
         }
+        if let Src::Git { path, .. } = &s.src {
+            lp.sha256 = Some(crate::git::content_hash(path)?);
+        }
         lock.pkgs.push(lp);
     }
-    let old = p.lock().unwrap_or_default();
     let changes = Lock::changes(&old, &lock);
     std::fs::write(p.lock_path(), lock.render()).map_err(|e| Problem::new("P022", format!("cannot write vard.lock: {}", e)))?;
     sync_agent_files(p, &lock, &old);
@@ -266,14 +307,46 @@ fn lock_is_current(p: &Project, m: &Manifest, lock: &Lock) -> bool {
     if want != have {
         return false;
     }
+    let git_ok = |lp: &LockPkg| {
+        crate::git::parse_src(&lp.src).is_some_and(|g| {
+            let export = net::cache().join("git-src").join(format!("{}-{}", &crate::sha256_hex(g.url.as_bytes())[..16], &g.commit[..12.min(g.commit.len())]));
+            export.join(".complete").exists()
+        })
+    };
+    // a git dependency whose URL/reference changed in vard.toml must be re-resolved
+    let git_same = m.deps.iter().all(|d| match &d.source {
+        crate::manifest::DepSource::Git { url, reference, dir } => lock.get(&d.name).and_then(|lp| crate::git::parse_src(&lp.src)).is_some_and(|g| g.url == crate::git::absolute_url(url, &p.dir) && g.reference == reference.describe() && g.dir == *dir),
+        _ => true,
+    });
+    if !git_same {
+        return false;
+    }
     lock.pkgs.iter().all(|lp| match lp.src.strip_prefix("path:") {
         // a path package: same version and dependencies as its manifest now says
         Some(rel) => Manifest::parse(&std::fs::read_to_string(p.dir.join(rel).join("vard.toml")).unwrap_or_default())
             .ok()
             .and_then(|pm| pm.package.map(|pk| (pk.version.map(|v| v.to_string()) == Some(lp.version.clone()), pm.deps)))
             .is_some_and(|(same, deps)| same && deps.len() == lp.deps.len() && deps.iter().all(|d| lp.deps.contains(&d.name))),
+        None if lp.src.starts_with("git:") => git_ok(lp),
         None => lp.sha256.as_ref().is_some_and(|s| cache_dir_for(&lp.name, &lp.version, s).join(".complete").exists() || lp.src == "builtin"),
     })
+}
+
+/// The checked-out package directory of a git package, verified against vard.lock.
+fn git_dir(lp: &LockPkg) -> Result<PathBuf, Problem> {
+    let g = crate::git::parse_src(&lp.src).ok_or_else(|| Problem::new("P022", format!("vard.lock: bad git source for {}", lp.name)))?;
+    let (_, export) = crate::git::checkout(&g.url, &crate::manifest::GitRef::Rev(g.commit.clone()), Some(&g.commit))?;
+    let dir = match &g.dir {
+        Some(d) => export.join(d),
+        None => export,
+    };
+    if let Some(want) = &lp.sha256 {
+        let got = crate::git::content_hash(&dir)?;
+        if &got != want {
+            return Err(Problem::new("P004", format!("{} {}: the files of commit {} differ from vard.lock", lp.name, lp.version, &g.commit[..12.min(g.commit.len())])));
+        }
+    }
+    Ok(dir)
 }
 
 /// The project's sources plus its packages, ready for `vard_lang::compile_linked`.
@@ -298,6 +371,7 @@ pub fn load(p: &Project) -> Result<Loaded, String> {
     for lp in &lock.pkgs {
         let dir = match lp.src.strip_prefix("path:") {
             Some(rel) => p.dir.join(rel),
+            None if lp.src.starts_with("git:") => git_dir(lp).map_err(|e| e.render("vard.lock"))?,
             None => {
                 let sha = lp.sha256.clone().ok_or_else(|| format!("vard.lock: {} has no sha256; run `vard install`", lp.name))?;
                 let reg_name = lp.src.strip_prefix("reg:").unwrap_or("builtin");
@@ -349,6 +423,10 @@ fn sync_agent_files(p: &Project, lock: &Lock, old: &Lock) {
     for lp in &lock.pkgs {
         let dir = match lp.src.strip_prefix("path:") {
             Some(rel) => p.dir.join(rel),
+            None if lp.src.starts_with("git:") => match git_dir(lp) {
+                Ok(d) => d,
+                Err(_) => continue,
+            },
             None => match &lp.sha256 {
                 Some(s) => cache_dir_for(&lp.name, &lp.version, s),
                 None => continue,

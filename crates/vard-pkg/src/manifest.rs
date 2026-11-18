@@ -56,6 +56,39 @@ pub enum DepSource {
     /// registry name (`None` = the project's default registry)
     Registry(Option<String>),
     Path(String),
+    /// a git repository: `{ git = URL, tag | rev | branch = "...", dir = "sub/dir" }`
+    Git { url: String, reference: GitRef, dir: Option<String> },
+}
+
+/// What to check out; the commit it resolves to is pinned in vard.lock.
+#[derive(Clone, Debug, PartialEq)]
+pub enum GitRef {
+    Tag(String),
+    Rev(String),
+    Branch(String),
+    /// the remote's default branch
+    Head,
+}
+
+impl GitRef {
+    /// The name git understands (`refs/tags/v1`, a commit, `origin/main`, `HEAD`).
+    pub fn spec(&self) -> String {
+        match self {
+            GitRef::Tag(t) => format!("refs/tags/{}", t),
+            GitRef::Rev(r) => r.clone(),
+            GitRef::Branch(b) => format!("origin/{}", b),
+            GitRef::Head => "origin/HEAD".into(),
+        }
+    }
+    /// For messages and vard.lock (`tag=v1`).
+    pub fn describe(&self) -> String {
+        match self {
+            GitRef::Tag(t) => format!("tag={}", t),
+            GitRef::Rev(r) => format!("rev={}", r),
+            GitRef::Branch(b) => format!("branch={}", b),
+            GitRef::Head => "HEAD".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -185,9 +218,22 @@ impl Manifest {
                 }
                 let (req, source) = match v {
                     Value::Str(r) => (Some(r.clone()), DepSource::Registry(None)),
-                    Value::Table(tb) => match get_str(tb, "path") {
-                        Some(p) => (None, DepSource::Path(p)),
-                        None => (get_str(tb, "version"), DepSource::Registry(get_str(tb, "registry"))),
+                    Value::Table(tb) => match (get_str(tb, "path"), get_str(tb, "git")) {
+                        (Some(p), _) => (None, DepSource::Path(p)),
+                        (None, Some(url)) => {
+                            let reference = match (get_str(tb, "tag"), get_str(tb, "rev"), get_str(tb, "branch")) {
+                                (Some(t), None, None) => GitRef::Tag(t),
+                                (None, Some(r), None) => GitRef::Rev(r),
+                                (None, None, Some(b)) => GitRef::Branch(b),
+                                (None, None, None) => GitRef::Head,
+                                _ => {
+                                    bad("dependencies", name, format!("git dependency `{}`: use one of tag, rev or branch", name), None, &mut probs);
+                                    continue;
+                                }
+                            };
+                            (None, DepSource::Git { url, reference, dir: get_str(tb, "dir") })
+                        }
+                        (None, None) => (get_str(tb, "version"), DepSource::Registry(get_str(tb, "registry"))),
                     },
                     _ => {
                         bad("dependencies", name, format!("dependency `{}` must be a version string or a table", name), Some(format!("{} = \"1.0\"", name)), &mut probs);

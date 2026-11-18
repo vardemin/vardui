@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vard packages</title>
+<style>
+:root { --bg: #ffffff; --fg: #111827; --muted: #6b7280; --line: #e5e7eb; --card: #f9fafb; --accent: #4f46e5; --warn: #b45309; --warn-bg: #fef3c7; --ok: #047857; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0b0f19; --fg: #e5e7eb; --muted: #9ca3af; --line: #1f2937; --card: #111827; --accent: #818cf8; --warn: #fbbf24; --warn-bg: #3a2a06; --ok: #34d399; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+header h1 { margin: 0 0 4px; font-size: 24px; }
+header p { margin: 0 0 16px; color: var(--muted); }
+a { color: var(--accent); }
+input[type=search] { width: 100%; padding: 10px 12px; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.count { color: var(--muted); font-size: 13px; margin: 8px 0 16px; }
+.pkg { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--card); cursor: pointer; }
+.pkg:focus { outline: 2px solid var(--accent); }
+.pkg h2 { margin: 0; font-size: 16px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ver { color: var(--muted); font-weight: 400; font-size: 13px; }
+.sum { margin: 4px 0 6px; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.tag { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tag.cap-s { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+.tag.ok { color: var(--ok); }
+.tag.new { color: var(--warn); border-color: var(--warn); }
+.detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; cursor: auto; }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.install { display: flex; gap: 8px; align-items: center; }
+.install code { flex: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-family: ui-monospace, Consolas, monospace; overflow-x: auto; white-space: nowrap; }
+button { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; cursor: pointer; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+td, th { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1 id="title">Vard packages</h1>
+  <p id="sub">Packages for <a href="https://github.com/vardemin/vardui">Vard</a>. Capabilities and APIs are computed by the compiler at publish time; every archive is signed and content-addressed.</p>
+</header>
+<input id="q" type="search" placeholder="Search names, keywords, summaries, exported views…" aria-label="Search packages" autofocus>
+<div class="count" id="count" aria-live="polite"></div>
+<div id="list"></div>
+<footer id="foot">Use one with <code>vard add NAME</code>. Verify this registry: <code id="verify"></code></footer>
+</main>
+<script>
+const SENSITIVE = ["secure", "permissions", "push", "native", "network"];
+const CAP_INFO = { prefs: "app preferences", secure: "Keychain / Keystore", permissions: "runtime permissions", push: "push and notifications", links: "opens URLs", share: "share sheet", deeplinks: "deep links", network: "remote resources", native: "native code shipped with the package" };
+const QUARANTINE = 72 * 3600 * 1000;
+let catalog = [];
+let registryName = "";
+const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v; else e.setAttribute(k, v); } for (const k of kids) e.append(k); return e; };
+const isNew = (since) => since && Date.now() - Date.parse(since) < QUARANTINE;
+function apiLine(i) {
+  const ps = (i.params || []).map(p => `${p.bind ? "bind " : ""}${p.name}: ${p.ty}${p.default != null ? " = " + p.default : ""}`).join(", ");
+  const ret = i.ret ? ` -> ${i.ret}` : "";
+  switch (i.kind) {
+    case "view": return `view ${i.name}(${ps})`;
+    case "struct": return `struct ${i.name} { ${ps} }`;
+    case "enum": return `enum ${i.name} { ${(i.variants || []).join(", ")} }`;
+    case "fn": return `fn ${i.name}(${ps})${ret}`;
+    case "extern": return `extern fn ${i.name}(${ps})${ret}`;
+    case "event": return `extern event ${i.name}(${ps})`;
+    case "const": return `const ${i.name}: ${i.ret || "_"}`;
+    default: return null;
+  }
+}
+function renderApi(api) {
+  const lines = api.map(apiLine).filter(Boolean);
+  const tokens = api.filter(i => i.kind === "token").map(i => "." + i.name);
+  if (tokens.length) lines.push(tokens.length > 12 ? `theme tokens (${tokens.length}): ${tokens[0]} … ${tokens[tokens.length - 1]}` : `theme tokens: ${tokens.join(" ")}`);
+  return lines.join("\n") || "(no public API)";
+}
+async function detail(name, box) {
+  const text = await fetch(`index/${name}.json`).then(r => r.text());
+  const entries = [];
+  for (const line of text.split("\n").filter(Boolean)) {
+    const v = JSON.parse(line);
+    if (v.sha256) entries.push(v); else { const e = entries.find(x => x.version === v.version); if (e) e.yanked = v.yanked; }
+  }
+  const latest = [...entries].reverse().find(e => !e.yanked) || entries[entries.length - 1];
+  const d = el("div", { class: "detail" });
+  const cmd = el("code", {}, `vard add ${name}`);
+  const copy = el("button", { type: "button" }, "Copy");
+  copy.onclick = (ev) => { ev.stopPropagation(); navigator.clipboard?.writeText(cmd.textContent).then(() => copy.textContent = "Copied"); };
+  d.append(el("div", { class: "install" }, cmd, copy));
+  const caps = latest.caps || [];
+  d.append(el("p", {}, caps.length ? "Capabilities: " + caps.map(c => `${c} (${CAP_INFO[c] || c})`).join(", ") + (caps.some(c => SENSITIVE.includes(c)) ? " — sensitive ones need approval in the app's [policy]." : "") : "Capabilities: none."));
+  d.append(el("pre", {}, renderApi(latest.api || [])));
+  const t = el("table");
+  t.append(el("tr", {}, el("th", {}, "version"), el("th", {}, "published"), el("th", {}, "tests"), el("th", {}, "built by")));
+  for (const e of [...entries].reverse()) {
+    const p = e.provenance || {};
+    const by = p.builder === "github-actions" ? el("a", { href: p.run }, (p.repository || "").replace("https://github.com/", "") + " @ " + (p.commit || "").slice(0, 12)) : (p.builder || "");
+    const tests = e.tests ? `${e.tests.passed} passed` + (e.tests.failed ? `, ${e.tests.failed} failed` : "") : "";
+    t.append(el("tr", {}, el("td", {}, e.version + (e.yanked ? " (yanked)" : "")), el("td", {}, (e.published || "").replace("T", " ").replace("Z", " UTC")), el("td", {}, tests), el("td", {}, by)));
+  }
+  d.append(t);
+  d.append(el("p", { class: "count" }, `owner ${latest.owner || "?"} · sha256 ${latest.sha256.slice(0, 16)}… · AGENT.md ${latest.doc_bytes || 0} B · vard ${latest.vard || "any"}`));
+  d.onclick = (ev) => ev.stopPropagation();
+  box.append(d);
+}
+function render() {
+  const words = document.getElementById("q").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const scored = catalog.map(c => {
+    let s = words.length ? 0 : 1;
+    for (const w of words) {
+      if (c.name === w) s += 10; else if (c.name.includes(w)) s += 5;
+      if ((c.keywords || []).some(k => k.toLowerCase() === w)) s += 4;
+      if ((c.summary || "").toLowerCase().includes(w)) s += 2;
+      if ((c.exports || []).some(e => e.toLowerCase().includes(w))) s += 2;
+    }
+    return [s, c];
+  }).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0] || a[1].name.localeCompare(b[1].name));
+  const list = document.getElementById("list");
+  list.replaceChildren();
+  document.getElementById("count").textContent = `${scored.length} of ${catalog.length} package(s)`;
+  for (const [, c] of scored) {
+    const tags = el("div", { class: "tags" });
+    for (const cap of c.caps || []) tags.append(el("span", { class: "tag" + (SENSITIVE.includes(cap) ? " cap-s" : ""), title: CAP_INFO[cap] || cap }, cap));
+    if (c.tests) tags.append(el("span", { class: "tag ok" }, c.tests.failed ? `${c.tests.failed} failing tests` : `tests ${c.tests.passed} ✓`));
+    if (isNew(c.since)) tags.append(el("span", { class: "tag new", title: "first published less than 72 hours ago; vard add needs --allow-new" }, "new"));
+    const ex = (c.exports || []).slice(0, 8).join(" ") + ((c.exports || []).length > 8 ? " …" : "");
+    if (ex) tags.append(el("span", { class: "tag" }, ex));
+    const box = el("article", { class: "pkg", tabindex: "0" }, el("h2", {}, c.name, el("span", { class: "ver" }, c.latest)), el("div", { class: "sum" }, c.summary || ""), tags);
+    const toggle = () => { const open = box.querySelector(".detail"); if (open) open.remove(); else detail(c.name, box); };
+    box.onclick = toggle;
+    box.onkeydown = (ev) => { if (ev.key === "Enter") toggle(); };
+    list.append(box);
+  }
+}
+(async () => {
+  const cfg = await fetch("config.json").then(r => r.json()).catch(() => ({}));
+  registryName = cfg.name || "";
+  if (registryName) document.getElementById("title").textContent = `Vard packages — ${registryName}`;
+  document.getElementById("verify").textContent = `vard registry verify ${location.href.replace(/index\.html.*$/, "").replace(/\/$/, "")}`;
+  catalog = await fetch("catalog.json").then(r => r.json()).catch(() => []);
+  document.getElementById("q").addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>
