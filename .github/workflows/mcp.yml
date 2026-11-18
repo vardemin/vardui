@@ -1,0 +1,78 @@
+# Builds vard.mcpb for a release (one bundle: a universal macOS binary, Linux x86_64,
+# Windows x86_64) and publishes server.json to the official MCP Registry
+# (io.github.vardemin/vardui) via GitHub OIDC. Called by release.yml; run it by hand to
+# (re)publish an existing release.
+name: mcp
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "release tag, e.g. v0.3.0"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  mcp:
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      MCP_PUBLISHER_VERSION: v1.8.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build vard.mcpb
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p dl bundle/server
+          gh release download "$TAG" -D dl -p 'vard-*-apple-darwin.tar.gz' -p 'vard-x86_64-unknown-linux-gnu.tar.gz' -p 'vard-x86_64-pc-windows-msvc.zip'
+          mkdir dl/arm dl/x64
+          tar -xzf dl/vard-aarch64-apple-darwin.tar.gz -C dl/arm
+          tar -xzf dl/vard-x86_64-apple-darwin.tar.gz -C dl/x64
+          lipo -create dl/arm/vard dl/x64/vard -output bundle/server/vard
+          tar -xzf dl/vard-x86_64-unknown-linux-gnu.tar.gz -C dl && mv dl/vard bundle/server/vard-linux
+          unzip -q dl/vard-x86_64-pc-windows-msvc.zip -d bundle/server
+          chmod +x bundle/server/vard bundle/server/vard-linux
+          jq --arg v "$version" '.version = $v' mcpb/manifest.json > bundle/manifest.json
+          (cd bundle && zip -qr ../vard.mcpb .)
+          gh release upload "$TAG" vard.mcpb --clobber
+          sha=$(shasum -a 256 vard.mcpb | cut -d' ' -f1)
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/vard.mcpb"
+          jq --arg v "$version" --arg u "$url" --arg s "$sha" \
+            '.version = $v | .packages[0].identifier = $u | .packages[0].fileSha256 = $s' server.json > server.tmp && mv server.tmp server.json
+          cat server.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
