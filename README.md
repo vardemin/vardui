@@ -23,7 +23,7 @@ $ vard run --do 'tap "Tap me"'
 ~ Text "Tapped 1 times" @2
 ```
 
-## What works today (v0.3, this repository)
+## What works today (v0.4, this repository)
 
 | Component | What it does |
 |---|---|
