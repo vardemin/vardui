@@ -17,7 +17,7 @@ impl Env {
         Env { root }
     }
     fn vard(&self, args: &[&str]) -> (String, bool) {
-        let out = Command::new(env!("CARGO_BIN_EXE_vard")).args(args).current_dir(&self.root).env("VARD_HOME", self.root.join("home")).env_remove("VARD_REGISTRY").env("VARD_OFFLINE", "1").output().unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_vard")).args(args).current_dir(&self.root).env("VARD_HOME", self.root.join("home")).env_remove("VARD_REGISTRY").env_remove("GITHUB_ACTIONS").env("VARD_OFFLINE", "1").output().unwrap();
         (String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr), out.status.success())
     }
     fn ok(&self, args: &[&str]) -> String {
@@ -220,7 +220,7 @@ fn remote_packages_are_quarantined_and_carry_provenance() {
     let token = env.ok(&["registry", "token", "reg", "alice"]).lines().last().unwrap().trim().to_string();
     let port = 20000 + (std::process::id() % 20000) as u16;
     let addr = format!("127.0.0.1:{}", port);
-    let mut server = Command::new(env!("CARGO_BIN_EXE_vard")).args(["registry", "serve", "reg", "--addr", &addr]).current_dir(&env.root).env("VARD_HOME", env.root.join("home")).spawn().unwrap();
+    let mut server = Command::new(env!("CARGO_BIN_EXE_vard")).args(["registry", "serve", "reg", "--addr", &addr]).current_dir(&env.root).env("VARD_HOME", env.root.join("home")).env_remove("GITHUB_ACTIONS").spawn().unwrap();
     for _ in 0..100 {
         if std::net::TcpStream::connect(&addr).is_ok() {
             break;
