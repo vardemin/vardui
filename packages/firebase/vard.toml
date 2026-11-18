@@ -1,0 +1,16 @@
+[package]
+name = "firebase"
+version = "1.0.0"
+summary = "Firebase Auth, Firestore with your own structs, Analytics; FCM feeds the std push events"
+keywords = ["firebase", "auth", "login", "firestore", "database", "analytics", "push", "fcm", "google"]
+license = "MIT OR Apache-2.0"
+vard = ">=0.1"
+capabilities = ["native"]
+
+# headless answers until a test says otherwise (`mock` / `resolve`)
+[sim]
+authCurrentUser = 'null'
+
+[native.android]
+module = "dev.vard.firebase.FirebaseModule"
+gradle = "native/android"

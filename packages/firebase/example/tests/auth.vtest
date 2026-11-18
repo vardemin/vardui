@@ -1,0 +1,8 @@
+expect "Sign in"
+tap "Sign in"
+expect "Signing in…" disabled
+resolve authSignInAnonymously {"user": {"uid": "u1"}}
+emit authChanged {"uid": "u1"}
+expect "Signed in as u1"
+tap "Sign out"
+expect "Sign in"

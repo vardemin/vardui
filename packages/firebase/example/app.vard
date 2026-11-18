@@ -1,0 +1,23 @@
+// The package's usage proof: compiled and tested on every publish.
+view App {
+  state user: FirebaseUser? = authCurrentUser()
+  state busy = false
+  on authChanged(u) { user = u }
+
+  fn signOut() {
+    authSignOut()
+    user = nil
+  }
+
+  Column(padding: 24, gap: 12) {
+    if user == nil {
+      Button(busy ? "Signing in…" : "Sign in", onTap: {
+        busy = true
+        authSignInAnonymously(r => { busy = false })
+      }, enabled: !busy)
+    } else {
+      Text("Signed in as {user!.uid}")
+      Button("Sign out", onTap: signOut)
+    }
+  }
+}

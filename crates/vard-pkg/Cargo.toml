@@ -1,0 +1,13 @@
+[package]
+name = "vard-pkg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Vard packages: manifest, semver, minimal version selection, lockfile, archives, static signed registries"
+
+[dependencies]
+vard-lang = { path = "../vard-lang" }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
+getrandom = "0.2"

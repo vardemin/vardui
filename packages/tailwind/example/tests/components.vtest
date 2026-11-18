@@ -1,0 +1,6 @@
+expect "Draft"
+expect "Save" disabled
+type "you@example.com" "leslie@example.com"
+expect "Save" enabled
+tap "Save"
+expect "Saved"

@@ -7,11 +7,13 @@ val repoRoot: File = rootProject.projectDir.resolve("../..").canonicalFile
 val vardApp: String = providers.gradleProperty("vard.app").getOrElse("examples/todo")
 val vardAbis: List<String> = providers.gradleProperty("vard.abis").getOrElse("arm64-v8a,x86_64")
     .split(",").map { it.trim() }.filter { it.isNotEmpty() }
-val firebase: Boolean = providers.gradleProperty("vard.firebase").getOrElse("false").toBoolean()
+// native modules of the app's packages, found by settings.gradle.kts
+@Suppress("UNCHECKED_CAST")
+val vardModules: List<String> = (gradle.extra["vardModules"] as? List<String>) ?: emptyList()
 
 val assetsOut = layout.buildDirectory.dir("generated/vardAssets")
 
-if (firebase && file("google-services.json").exists()) {
+if (":vard-firebase" in vardModules && file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
@@ -49,19 +51,19 @@ android {
 
 dependencies {
     implementation(project(":vard"))
-    if (firebase) implementation(project(":vard-firebase"))
+    vardModules.forEach { implementation(project(it)) }
 }
 
-// Bundle the Vard project as assets/app: sources, fonts/ and assets/ (tests are left out).
-val copyVardSources by tasks.registering(Sync::class) {
-    description = "Copies the Vard project ($vardApp) into the APK assets"
-    from(repoRoot.resolve(vardApp)) {
-        include("**/*.vard", "fonts/**", "assets/**")
-        exclude("tests/**", "build/**")
-    }
-    into(assetsOut.map { it.dir("app") })
+// Bundle the Vard project as assets/app with `vard bundle`: app sources, its packages
+// (`@name/...`), vard.lock, fonts/, assets/ and bundle.json (hash + native fingerprint).
+val bundleVardApp by tasks.registering(Exec::class) {
+    description = "Bundles the Vard project ($vardApp) and its packages into the APK assets"
+    workingDir = repoRoot
+    val out = assetsOut.map { it.dir("app") }
+    doFirst { out.get().asFile.deleteRecursively() }
+    commandLine("cargo", "run", "-q", "--release", "-p", "vard-cli", "--", "bundle", vardApp, "--out", out.get().asFile.absolutePath)
 }
 
 tasks.named("preBuild") {
-    dependsOn(copyVardSources)
+    dependsOn(bundleVardApp)
 }

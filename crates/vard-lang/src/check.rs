@@ -272,7 +272,9 @@ impl<'a> Checker<'a> {
             if registry::element(&v.name).is_some() {
                 self.err("E0216", v.span, format!("`{}` is a built-in element; choose another view name", v.name));
             }
-            if !v.name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+            // (`pkg.Name` = a package view renamed by the linker; `_Name` = package-private)
+            let plain = v.name.rsplit('.').next().unwrap_or(&v.name).trim_start_matches('_');
+            if !plain.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
                 self.err("E0211", v.span, format!("view names start with an uppercase letter: `{}`", v.name));
             }
             let sig = self.param_sigs(&v.params);

@@ -59,7 +59,7 @@ on appear {
 }
 ```
 
-## Wrapping an SDK (Firebase is the worked example: `vard add firebase`)
+## Wrapping an SDK (Firebase is the worked example: `vard add firebase --allow native`, source in the package)
 - Mirror the SDK's *use cases*, not its classes: `authSignInWithEmail(email, password, done)`.
 - Results/errors as structs (`AuthResult { user: User?, error: Error? }`).
 - Listeners: callback answered repeatedly (`send`), or an `extern event`.

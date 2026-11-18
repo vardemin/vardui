@@ -1,14 +1,18 @@
-//! `vard` — the single tool an agent needs: check, run (headless), test, doc, explain, new, mcp.
+//! `vard` — the single tool an agent needs: check, run (headless), test, doc, explain, new,
+//! packages (add/install/update/search/info/publish), bundle, registry, mcp.
 //!
 //! Output discipline: every command prints the minimum that lets an LLM decide its next
 //! step. Success is one line. Failures carry file:line, the source line and a fix.
 
 mod bindings;
 mod mcp;
+mod pkg;
+mod server;
 
 use std::path::{Path, PathBuf};
 use vard_lang::diag::{apply_fixes, Severity};
-use vard_lang::{compile, registry, Compilation};
+use vard_lang::{registry, Compilation};
+use vard_pkg::project::{self, Loaded, Project};
 use vard_runtime::Runtime;
 
 pub const CHEATSHEET: &str = include_str!("../../../knowledge/llms.txt");
@@ -17,27 +21,10 @@ const SKILL_APP: &str = include_str!("../../../knowledge/skills/vard-app/SKILL.m
 const SKILL_DEBUG: &str = include_str!("../../../knowledge/skills/vard-debug/SKILL.md");
 const SKILL_NATIVE: &str = include_str!("../../../knowledge/skills/vard-native/SKILL.md");
 const SKILL_DESIGN: &str = include_str!("../../../knowledge/skills/vard-design/SKILL.md");
+const SKILL_PACKAGES: &str = include_str!("../../../knowledge/skills/vard-packages/SKILL.md");
 pub const DESIGN_DOC: &str = include_str!("../../../knowledge/design.md");
 pub const NATIVE_DOC: &str = include_str!("../../../knowledge/native.md");
-
-/// `vard add NAME`: (name, file written into the project, contents, what to do next)
-const ADDONS: &[(&str, &str, &str, &str)] = &[
-    (
-        "tailwind",
-        "tailwind.vard",
-        include_str!("../../../knowledge/kits/tailwind.vard"),
-        "Tailwind palette (.slate50 ... .rose950), semantic tokens with dark values, TwButton TwCard Badge Avatar Field.
-Class -> prop mapping: `vard doc design`.",
-    ),
-    (
-        "firebase",
-        "firebase.vard",
-        include_str!("../../../knowledge/modules/firebase.vard"),
-        "Auth, Firestore (your structs), Analytics; push comes through the std push events.
-Android: put google-services.json into platforms/android/app/ and build with -Pvard.firebase=true.
-Headless: `mock authCurrentUser {\"uid\": \"u1\"}`, `resolve firestoreListNotes [[...], null]`.",
-    ),
-];
+pub const PACKAGES_DOC: &str = include_str!("../../../knowledge/packages.md");
 
 const USAGE: &str = "\
 vard — AI-first UI framework toolchain
@@ -46,12 +33,29 @@ vard — AI-first UI framework toolchain
   vard run [PATH] [--do \"ACTIONS\"] [--script FILE] [--view NAME] [--size WxH] [--dark] [--no-lint]
                                          run headless, drive with actions (default: tree)
   vard test [PATH]                       run *.vtest files
-  vard doc [TOPIC]                       cheat sheet; topics: elements common actions std errors <Element> <View>
-  vard explain CODE                      explain a diagnostic code (E/W/R/L)
+  vard doc [TOPIC]                       cheat sheet; topics: elements common actions std errors design
+                                         native packages <Element> <View> <package>
+  vard explain CODE                      explain a diagnostic code (E/W/R/L/P)
   vard new NAME                          scaffold an app with agent instructions, skills and MCP config
-  vard add NAME [PATH]                   add a kit or module to the project: tailwind, firebase
   vard bindings [PATH] --kotlin [--package P] [--class C] [--out FILE]
                                          typed Kotlin base class for the project's extern fn/event
+
+packages
+  vard search WORDS                      find packages (name, keywords, summary, exported names)
+  vard info NAME                         versions, capabilities, API, tests of a package
+  vard add NAME[@REQ] [--path DIR] [--registry R] [--allow CAPS]
+                                         add a dependency (exact names only), install, update vard.lock
+  vard remove NAME                       remove a dependency
+  vard install [--allow CAPS]            resolve vard.toml, fetch + verify, write vard.lock
+  vard update [NAME] [--major]           raise requirements to the newest versions; prints API diffs
+  vard api [PATH|NAME] [--caps]          public API and capabilities computed by the compiler
+  vard pack [PATH] [--out FILE]          deterministic .vpk archive of a package
+  vard publish [PATH] --registry DIR|URL|NAME [--token T] [--dry-run]
+                                         run the gate (compile, caps, tests, semver, docs) and publish
+  vard yank NAME@VER --registry DIR [--undo]
+  vard bundle [PATH] --out DIR|FILE.vpk  everything a device needs (+ bundle.json, native fingerprint)
+  vard registry init DIR [--name N] | token DIR OWNER | serve DIR [--addr H:P] | verify DIR|URL
+
   vard mcp                               MCP server on stdio
 
 PATH is a .vard file or a project directory (default: current directory).";
@@ -74,26 +78,38 @@ fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
 }
 
-/// First argument that is not a flag or a flag's value.
-fn positional(args: &[String]) -> Option<&str> {
-    const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets"];
+const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--name", "--addr"];
+
+/// Arguments that are not flags or flags' values.
+fn positionals(args: &[String]) -> Vec<&str> {
+    let mut out = Vec::new();
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
         if WITH_VALUE.contains(&a.as_str()) {
             i += 2;
-        } else if a.starts_with("--") {
-            i += 1;
         } else {
-            return Some(a);
+            if !a.starts_with("--") {
+                out.push(a.as_str());
+            }
+            i += 1;
         }
     }
-    None
+    out
+}
+
+fn positional(args: &[String]) -> Option<&str> {
+    positionals(args).into_iter().next()
+}
+
+fn allow_list(args: &[String]) -> Vec<String> {
+    opt(args, "--allow").map(|s| s.split(',').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect()).unwrap_or_default()
 }
 
 fn dispatch(args: &[String]) -> (String, bool) {
     let Some(cmd) = args.first() else { return (USAGE.to_string(), true) };
     let rest = &args[1..];
+    let pos = positionals(rest);
     match cmd.as_str() {
         "check" => cmd_check(positional(rest).unwrap_or("."), flag(rest, "--fix"), flag(rest, "--json")),
         "run" => {
@@ -124,13 +140,43 @@ fn dispatch(args: &[String]) -> (String, bool) {
             Some(name) => cmd_new(name),
             None => ("usage: vard new NAME".into(), false),
         },
-        "add" => {
-            let mut pos = rest.iter().filter(|a| !a.starts_with("--"));
-            match pos.next() {
-                Some(name) => cmd_add(name, pos.next().map(|s| s.as_str()).unwrap_or("."), flag(rest, "--force")),
-                None => (format!("usage: vard add NAME [PATH]; available: {}", ADDONS.iter().map(|a| a.0).collect::<Vec<_>>().join(" ")), false),
-            }
+        "add" => match pos.first() {
+            Some(spec) => pkg::cmd_add(spec, pos.get(1).copied().unwrap_or("."), opt(rest, "--path"), opt(rest, "--registry"), &allow_list(rest)),
+            None => ("usage: vard add NAME[@REQ] [PATH] [--path DIR] [--registry R] [--allow CAPS]; find names: vard search WORDS".into(), false),
+        },
+        "remove" | "rm" => match pos.first() {
+            Some(name) => pkg::cmd_remove(name, pos.get(1).copied().unwrap_or(".")),
+            None => ("usage: vard remove NAME [PATH]".into(), false),
+        },
+        "install" | "i" => pkg::cmd_install(positional(rest).unwrap_or("."), &allow_list(rest)),
+        "update" => {
+            // `vard update` / `vard update NAME` / `vard update NAME PATH`
+            let (name, dir) = match pos.as_slice() {
+                [] => (None, "."),
+                [one] if Path::new(one).is_dir() => (None, *one),
+                [one] => (Some(*one), "."),
+                [n, d, ..] => (Some(*n), *d),
+            };
+            pkg::cmd_update(name, dir, flag(rest, "--major"))
         }
+        "search" => pkg::cmd_search(&pos.join(" "), "."),
+        "info" => match pos.first() {
+            Some(n) => pkg::cmd_info(n, "."),
+            None => ("usage: vard info NAME".into(), false),
+        },
+        "api" => pkg::cmd_api(positional(rest).unwrap_or("."), flag(rest, "--caps")),
+        "pack" => pkg::cmd_pack(positional(rest).unwrap_or("."), opt(rest, "--out")),
+        "publish" => pkg::cmd_publish(positional(rest).unwrap_or("."), opt(rest, "--registry"), opt(rest, "--token"), flag(rest, "--dry-run")),
+        "yank" => match pos.first() {
+            Some(s) => pkg::cmd_yank(s, opt(rest, "--registry"), flag(rest, "--undo")),
+            None => ("usage: vard yank NAME@VERSION --registry DIR [--undo]".into(), false),
+        },
+        "bundle" => match opt(rest, "--out") {
+            Some(out) => pkg::cmd_bundle(positional(rest).unwrap_or("."), out),
+            None => ("usage: vard bundle [PATH] --out DIR|FILE.vpk".into(), false),
+        },
+        "android-modules" => pkg::android_modules(positional(rest).unwrap_or(".")),
+        "registry" => pkg::cmd_registry(rest),
         "bindings" => cmd_bindings(
             positional(rest).unwrap_or("."),
             opt(rest, "--package").unwrap_or("dev.vard.generated"),
@@ -153,51 +199,41 @@ fn parse_size(s: &str) -> Option<(f32, f32)> {
 }
 
 // ---------------- project loading ----------------
-fn collect_vard(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    let mut entries: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
-    entries.sort();
-    for p in entries {
-        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if p.is_dir() {
-            if !name.starts_with('.') && name != "target" && name != "node_modules" && name != "build" {
-                collect_vard(&p, out);
-            }
-        } else if name.ends_with(".vard") {
-            out.push(p);
-        }
-    }
-}
-
 fn display(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('\\', "/");
-    s.strip_prefix("./").unwrap_or(&s).to_string()
+    project::display(p)
 }
 
-pub fn load(path: &str) -> Result<Vec<(String, String)>, String> {
-    let p = Path::new(path);
-    let mut files = Vec::new();
-    if p.is_dir() {
-        collect_vard(p, &mut files);
-        if files.is_empty() {
-            return Err(format!("no .vard files in {}", display(p)));
-        }
-    } else if p.is_file() {
-        files.push(p.to_path_buf());
-    } else {
-        return Err(format!("{} does not exist", display(p)));
-    }
-    files
-        .into_iter()
-        .map(|f| std::fs::read_to_string(&f).map(|t| (display(&f), t.replace("\r\n", "\n"))).map_err(|e| format!("cannot read {}: {}", display(&f), e)))
-        .collect()
+/// The project's sources plus its packages (`@name/...`), installing first if vard.lock is
+/// missing or stale.
+pub fn load_project(path: &str) -> Result<Loaded, String> {
+    let p = Project::open(path)?;
+    project::load(&p)
+}
+
+pub fn compile_loaded(l: &Loaded) -> Compilation {
+    vard_lang::compile_linked(&l.files, l.link.as_ref())
+}
+
+fn is_pkg_file(c: &Compilation, file: u16) -> bool {
+    file == 0 || c.sources.file(file).path.starts_with('@')
+}
+
+/// Diagnostics worth showing: everything in the user's files, only errors in packages
+/// (a package's warnings are its author's business, not tokens for this session).
+fn shown(c: &Compilation) -> Vec<&vard_lang::diag::Diag> {
+    c.diags.iter().filter(|d| d.severity == Severity::Error || !is_pkg_file(c, d.span.file)).collect()
+}
+
+pub fn user_diags(c: &Compilation) -> String {
+    shown(c).iter().map(|d| c.sources.render(d)).collect()
 }
 
 fn summary(c: &Compilation, files: usize) -> String {
-    let errors = c.error_count();
-    let warnings = c.diags.len() - errors;
-    let fixable = c.diags.iter().filter(|d| d.fix.is_some()).count();
-    if c.diags.is_empty() {
+    let ds = shown(c);
+    let errors = ds.iter().filter(|d| d.severity == Severity::Error).count();
+    let warnings = ds.len() - errors;
+    let fixable = ds.iter().filter(|d| d.fix.is_some() && !is_pkg_file(c, d.span.file)).count();
+    if ds.is_empty() {
         return format!("ok: {} file(s), no errors\n", files);
     }
     let mut s = format!("{} error(s), {} warning(s)", errors, warnings);
@@ -208,33 +244,43 @@ fn summary(c: &Compilation, files: usize) -> String {
     s
 }
 
+fn notes(l: &Loaded) -> String {
+    l.notes.iter().map(|n| format!("{}\n", n)).collect()
+}
+
 // ---------------- commands ----------------
 pub fn cmd_check(path: &str, fix: bool, json: bool) -> (String, bool) {
-    let mut files = match load(path) {
-        Ok(f) => f,
+    let mut l = match load_project(path) {
+        Ok(l) => l,
         Err(e) => return (e, false),
     };
-    let mut out = String::new();
-    let mut c = compile(&files);
+    let own = l.files.iter().filter(|f| !f.0.starts_with('@')).count();
+    let mut out = notes(&l);
+    let mut c = compile_loaded(&l);
     if fix {
         // Fixes can expose further fixable errors; iterate to a fixed point.
         let mut total = 0;
+        let mut touched: Vec<String> = Vec::new();
         for _ in 0..8 {
-            let patched = apply_fixes(&c.sources, &c.diags);
+            // never rewrite package sources (they are read-only inputs from the cache)
+            let patched: Vec<_> = apply_fixes(&c.sources, &c.diags).into_iter().filter(|(id, _, _)| !is_pkg_file(&c, *id)).collect();
             if patched.is_empty() {
                 break;
             }
             for (file_id, text, n) in patched {
                 let fpath = c.sources.file(file_id).path.clone();
-                if let Some(slot) = files.iter_mut().find(|(p, _)| *p == fpath) {
+                if let Some(slot) = l.files.iter_mut().find(|(p, _)| *p == fpath) {
                     slot.1 = text;
                     total += n;
+                    if !touched.contains(&fpath) {
+                        touched.push(fpath);
+                    }
                 }
             }
-            c = compile(&files);
+            c = compile_loaded(&l);
         }
         if total > 0 {
-            for (p, text) in &files {
+            for (p, text) in l.files.iter().filter(|f| touched.contains(&f.0)) {
                 if let Err(e) = std::fs::write(p, text) {
                     return (format!("cannot write {}: {}", p, e), false);
                 }
@@ -243,11 +289,11 @@ pub fn cmd_check(path: &str, fix: bool, json: bool) -> (String, bool) {
         }
     }
     if json {
-        let items: Vec<String> = c.diags.iter().map(|d| c.sources.render_json(d)).collect();
+        let items: Vec<String> = shown(&c).iter().map(|d| c.sources.render_json(d)).collect();
         return (format!("[{}]\n", items.join(",")), !c.has_errors());
     }
-    out.push_str(&c.render_diags());
-    out.push_str(&summary(&c, files.len()));
+    out.push_str(&user_diags(&c));
+    out.push_str(&summary(&c, own));
     (out, !c.has_errors())
 }
 
@@ -262,24 +308,31 @@ pub struct RunOpts<'a> {
 
 /// Compile and mount; on failure return the message to print.
 fn start(path: &str, view: Option<&str>, size: (f32, f32), dark: bool) -> Result<Runtime, String> {
-    let files = load(path)?;
-    let c = compile(&files);
+    let l = load_project(path)?;
+    let c = compile_loaded(&l);
     if c.has_errors() {
         let errors: String = c.diags.iter().filter(|d| d.severity == Severity::Error).map(|d| c.sources.render(d)).collect();
-        return Err(format!("{}{}", errors, summary(&c, files.len())));
+        return Err(format!("{}{}", errors, summary(&c, l.files.len())));
     }
     let root = match view {
         Some(v) => v.to_string(),
         None if c.program.view_index.contains_key("App") => "App".to_string(),
         None => {
             // no `App`: fall back to the last view declared in user code
-            match c.program.views.iter().rev().find(|v| v.span.file != 0) {
+            match c.program.views.iter().rev().find(|v| !is_pkg_file(&c, v.span.file)) {
                 Some(v) => v.name.clone(),
                 None => return Err("the project declares no views; add `view App { ... }`".into()),
             }
         }
     };
+    let externs: Vec<String> = c.program.externs.iter().map(|e| e.name.clone()).collect();
     let mut rt = Runtime::new(c, size.0, size.1);
+    // packages' [sim]: default headless answers (a test's `mock` overrides them)
+    for (name, json) in &l.sims {
+        if externs.contains(name) {
+            rt.mocks.insert(name.clone(), serde_json::from_str(json).unwrap_or(serde_json::Value::Null));
+        }
+    }
     if dark {
         rt.set_dark(true);
     }
@@ -310,6 +363,24 @@ pub fn cmd_run(o: &RunOpts) -> (String, bool) {
     (out, ok)
 }
 
+/// The app a test exercises: `@app`, else the nearest directory with vard.toml between the
+/// test and `root` (a package's example/), else `root`.
+fn test_target(test: &Path, root: &Path) -> PathBuf {
+    let root_c = std::fs::canonicalize(root).unwrap_or(root.to_path_buf());
+    let mut dir = test.parent();
+    while let Some(d) = dir {
+        if d.join("vard.toml").exists() {
+            return d.to_path_buf();
+        }
+        let dc = std::fs::canonicalize(d).unwrap_or(d.to_path_buf());
+        if dc == root_c {
+            break;
+        }
+        dir = d.parent();
+    }
+    root.to_path_buf()
+}
+
 pub fn cmd_test(path: &str) -> (String, bool) {
     let p = Path::new(path);
     let (project, mut tests) = if p.is_file() && path.ends_with(".vtest") {
@@ -323,7 +394,6 @@ pub fn cmd_test(path: &str) -> (String, bool) {
     if tests.is_empty() {
         return (format!("no .vtest files under {}", display(&project)), false);
     }
-    // a test in tests/ exercises the project one level up
     let mut out = String::new();
     let (mut passed, mut failed) = (0, 0);
     for t in &tests {
@@ -355,7 +425,7 @@ pub fn cmd_test(path: &str) -> (String, bool) {
         }
         let target = match &app {
             Some(a) => t.parent().unwrap_or(Path::new(".")).join(a),
-            None => project.clone(),
+            None => test_target(t, &project),
         };
         let started = std::time::Instant::now();
         let result = start(&target.to_string_lossy(), view.as_deref(), size, dark).map(|mut rt| rt.run_script(&script));
@@ -402,17 +472,12 @@ fn collect_ext(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
 }
 
 pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
-    let Some(topic) = topic else { return (CHEATSHEET.to_string(), true) };
+    let Some(topic) = topic else { return (format!("{}{}", CHEATSHEET, pkg::packages_section(project)), true) };
     match topic {
         "common" => return (registry::common_doc(), true),
         "design" => return (DESIGN_DOC.to_string(), true),
         "native" => return (NATIVE_DOC.to_string(), true),
-        "tailwind" | "firebase" => {
-            let a = ADDONS.iter().find(|a| a.0 == topic).unwrap();
-            return (format!("{}
-(add to a project: `vard add {}`)
-", a.2, a.0), true);
-        }
+        "packages" => return (PACKAGES_DOC.to_string(), true),
         "actions" => return (vard_runtime::ACTIONS_HELP.to_string(), true),
         "std" => return (vard_lang::STD_SRC.to_string(), true),
         "elements" => {
@@ -425,7 +490,7 @@ pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
         }
         "errors" => {
             let mut s = String::new();
-            for (code, text) in vard_lang::explain::EXPLAIN.iter().chain(vard_runtime::EXPLAIN.iter()) {
+            for (code, text) in vard_lang::explain::EXPLAIN.iter().chain(vard_runtime::EXPLAIN.iter()).chain(vard_pkg::EXPLAIN.iter()) {
                 s.push_str(&format!("{} {}\n", code, text));
             }
             return (s, true);
@@ -438,10 +503,15 @@ pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
     if let Some((_, vs)) = registry::ENUMS.iter().find(|(n, _)| *n == topic) {
         return (format!("enum {}: {}\n", topic, vs.iter().map(|v| format!(".{}", v)).collect::<Vec<_>>().join(" ")), true);
     }
-    // a view: std or from the project in the current directory
-    let files = load(project).unwrap_or_default();
-    let c = compile(&files);
-    if let Some(v) = c.program.views.iter().find(|v| v.name == topic) {
+    // a package (installed here, or bundled with the toolchain)
+    if vard_pkg::manifest::valid_name(topic) {
+        if let Some(d) = pkg::package_doc(topic, project) {
+            return (d, true);
+        }
+    }
+    // a view: std, the project's, or a package's
+    let c = load_project(project).map(|l| compile_loaded(&l)).unwrap_or_else(|_| vard_lang::compile(&[]));
+    if let Some(v) = c.program.views.iter().find(|v| v.name == topic || v.name.rsplit('.').next() == Some(topic)) {
         let src = c.sources.text(v.span);
         // header = everything before the body's `{` (skip braces inside the parameter list)
         let mut depth = 0i32;
@@ -459,22 +529,20 @@ pub fn cmd_doc(topic: Option<&str>, project: &str) -> (String, bool) {
         }
         let header = src[..end].trim();
         let origin = if v.span.file == 0 { "std view (full source: `vard doc std`)".to_string() } else { c.sources.loc(v.span) };
-        return (
-            format!(
-                "{}\n  {}\n  also accepts outer layout props: {}\n",
-                header,
-                origin,
-                vard_lang::check::VIEW_OUTER_PROPS.join(" ")
-            ),
-            true,
-        );
+        return (format!("{}\n  {}\n  also accepts outer layout props: {}\n", header, origin, vard_lang::check::VIEW_OUTER_PROPS.join(" ")), true);
     }
-    (format!("no doc topic `{}`; topics: elements common actions std errors design native tailwind firebase, an element/enum name, or a view name", topic), false)
+    (
+        format!("no doc topic `{}`; topics: elements common actions std errors design native packages, an element/enum name, a view name, or a package name (`vard search {}`)", topic, topic),
+        false,
+    )
 }
 
 pub fn cmd_explain(code: &str) -> (String, bool) {
     let code = code.trim().to_uppercase();
-    match vard_lang::explain::explain(&code).or_else(|| vard_runtime::EXPLAIN.iter().find(|(c, _)| *c == code).map(|(_, t)| *t)) {
+    let found = vard_lang::explain::explain(&code)
+        .or_else(|| vard_runtime::EXPLAIN.iter().find(|(c, _)| *c == code).map(|(_, t)| *t))
+        .or_else(|| vard_pkg::explain(&code));
+    match found {
         Some(t) => (format!("{}: {}\n", code, t), true),
         None => (format!("no explanation for `{}`; the message and its `help:`/`fix:` lines are the full story. List: `vard doc errors`", code), false),
     }
@@ -500,16 +568,21 @@ fn cmd_new(name: &str) -> (String, bool) {
     if root.exists() {
         return (format!("{} already exists", name), false);
     }
+    let app_name = root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string());
+    let manifest = format!("[app]\nname = {}\n\n[dependencies]\n", vard_pkg::toml::quote(&app_name));
     let files: &[(&str, &str)] = &[
         ("app.vard", NEW_APP),
+        ("vard.toml", &manifest),
         ("tests/smoke.vtest", NEW_TEST),
         ("AGENTS.md", AGENTS_MD),
         ("CLAUDE.md", "@AGENTS.md\n"),
         (".mcp.json", NEW_MCP),
+        (".gitignore", ".vard/\n*.png\n"),
         (".claude/skills/vard-app/SKILL.md", SKILL_APP),
         (".claude/skills/vard-debug/SKILL.md", SKILL_DEBUG),
         (".claude/skills/vard-native/SKILL.md", SKILL_NATIVE),
         (".claude/skills/vard-design/SKILL.md", SKILL_DESIGN),
+        (".claude/skills/vard-packages/SKILL.md", SKILL_PACKAGES),
     ];
     for (rel, text) in files {
         let p = root.join(rel);
@@ -522,31 +595,17 @@ fn cmd_new(name: &str) -> (String, bool) {
             return (format!("cannot write {}: {}", display(&p), e), false);
         }
     }
-    (format!("created {}/ (app.vard, tests/, AGENTS.md, skills, .mcp.json)\nnext: cd {} && vard run && vard test\n", name, name), true)
-}
-
-pub fn cmd_add(name: &str, dir: &str, force: bool) -> (String, bool) {
-    let Some((_, file, text, next)) = ADDONS.iter().find(|a| a.0 == name) else {
-        return (format!("unknown add-on `{}`; available: {}", name, ADDONS.iter().map(|a| a.0).collect::<Vec<_>>().join(" ")), false);
-    };
-    let path = Path::new(dir).join(file);
-    if path.exists() && !force {
-        return (format!("{} already exists (use --force to overwrite)", display(&path)), false);
-    }
-    if let Err(e) = std::fs::write(&path, text) {
-        return (format!("cannot write {}: {}", display(&path), e), false);
-    }
-    (format!("added {}\n{}\nnext: vard check {}\n", display(&path), next, dir), true)
+    (format!("created {}/ (app.vard, vard.toml, tests/, AGENTS.md, skills, .mcp.json)\nnext: cd {} && vard run && vard test\n", name, name), true)
 }
 
 pub fn cmd_bindings(path: &str, package: &str, class: &str, out: Option<&str>) -> (String, bool) {
-    let files = match load(path) {
-        Ok(f) => f,
+    let l = match load_project(path) {
+        Ok(l) => l,
         Err(e) => return (e, false),
     };
-    let c = compile(&files);
+    let c = compile_loaded(&l);
     if c.has_errors() {
-        return (format!("{}{}", c.render_diags(), summary(&c, files.len())), false);
+        return (format!("{}{}", user_diags(&c), summary(&c, l.files.len())), false);
     }
     match bindings::kotlin(&c, &bindings::Opts { package, class }) {
         Ok(code) => match out {

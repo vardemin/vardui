@@ -7,7 +7,7 @@ Kotlin-хост, который рисует результат и подклю�
  platforms/android
  ├── vard/            библиотека: libvard_ffi.so + VardView, VardHost, VardActivity, модули ядра
  ├── app/             приложение-оболочка: бандлит Vard-проект (vard.app) и наследует VardActivity
- └── vard-firebase/   модуль-библиотека: Firebase Auth / Firestore / Analytics / FCM (-Pvard.firebase=true)
+ (нативные модули пакетов — `packages/*/native/android`, подключаются автоматически)
 ```
 
 ```
@@ -29,7 +29,7 @@ Kotlin-хост, который рисует результат и подклю�
 | Разрешения | `PermissionsModule`: `requestPermissions` + `shouldShowRequestPermissionRationale` → `granted`/`denied`/`blocked`; отсутствующее в манифесте разрешение — `denied` и подсказка в logcat |
 | Преференсы | `PrefsModule` на SharedPreferences; ими же сохраняются `pref`-переменные |
 | Keychain | `SecureModule`: AES-256-GCM, ключ не покидает Android Keystore |
-| Уведомления и пуши | `VardPush`: в foreground — событие `pushReceived`, в фоне — системное уведомление; тап открывает приложение и шлёт `pushOpened` (и при холодном старте). Токен и доставку даёт провайдер (`vard-firebase`) |
+| Уведомления и пуши | `VardPush`: в foreground — событие `pushReceived`, в фоне — системное уведомление; тап открывает приложение и шлёт `pushOpened` (и при холодном старте). Токен и доставку даёт провайдер (пакет `firebase`) |
 | Жизненный цикл, диплинки | `appResume`/`appPause`, `deepLink(url)` для `vard://...` |
 | Модули | ядро + все библиотеки с `<meta-data android:name="dev.vard.module.<имя>" android:value="<класс>"/>` + `modules()` приложения |
 | Шрифты и картинки | `fonts/*.ttf` проекта регистрируются в ядре и рисуются тем же файлом; `Image("assets/x.png")` из assets, `https://` — загрузка в фоне |
@@ -64,7 +64,6 @@ adb shell am start -n dev.vard.host/dev.vard.app.MainActivity
 | `vard.app` | `examples/todo` | какой Vard-проект упаковать (путь от корня репозитория) |
 | `vard.abis` | `arm64-v8a,x86_64` | ABI для `cargo ndk -t`; для эмулятора хватит `-Pvard.abis=x86_64` |
 | `vard.skipCargo` | `false` | не вызывать cargo, взять готовые `.so` из `vard/src/main/jniLibs/<abi>/` |
-| `vard.firebase` | `false` | подключить `:vard-firebase` (нужен `app/google-services.json`) |
 | `vard.applicationId` | `dev.vard.host` | applicationId приложения |
 
 Ошибки компиляции Vard показываются на экране; ошибки рантайма (`R…`) и подсказки модулей
@@ -102,18 +101,29 @@ adb shell am start -a android.intent.action.VIEW -d "vard://item/7" dev.vard.hos
    `vard bindings examples/myapp --kotlin --package com.example --class PlacesModule --out app/src/main/kotlin/PlacesModule.kt`.
 3. Реализовать абстрактные методы (колбэки можно вызывать с любого потока) и вернуть модуль из
    `MainActivity.modules()` — или вынести в библиотеку с `<meta-data android:name="dev.vard.module.places" .../>`
-   (так устроен `vard-firebase`).
+   (так устроен пакет `firebase`), а лучше — оформить как пакет с `[native.android]`
+   (см. [docs/packages/authoring.md](../../docs/packages/authoring.md)): тогда оболочка подключит его сама.
 
 ## Firebase
 
 ```bash
-vard add firebase examples/myapp
+vard add firebase examples/myapp --allow native
 ```
 
-Положить `google-services.json` в `platforms/android/app/` и собрать с `-Pvard.firebase=true`.
+Положить `google-services.json` в `platforms/android/app/`. Отдельный флаг не нужен: пакет объявляет
+`[native.android] gradle = "native/android"`, и `settings.gradle.kts` подключает модуль сам
+(`vard android-modules examples/myapp` показывает, что будет подключено).
 Без файла модуль стартует, но все вызовы отвечают `FirebaseError(code: "not-configured")`.
 Firestore работает с любыми структурами приложения: объявите `firestoreGet<X>`/`firestoreList<X>`/...
 со своим типом — нативная часть одна на все.
+
+## Как приложение попадает в APK
+
+Задача `bundleVardApp` вызывает `vard bundle <vard.app> --out build/generated/vardAssets/app`: исходники
+приложения, исходники пакетов (`@name/...`), `vard.lock` (граф пакетов для компоновщика), `fonts/`,
+`assets/` и `bundle.json` с хешем содержимого и *нативным отпечатком* (список `extern` и нативных
+модулей). Отпечаток — ключ совместимости для доставки обновлений без пересборки APK
+([docs/packages/delivery.md](../../docs/packages/delivery.md)).
 
 ## Ограничения
 

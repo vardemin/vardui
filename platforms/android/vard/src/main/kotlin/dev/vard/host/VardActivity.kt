@@ -50,7 +50,8 @@ open class VardActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val files = listAssets(appDir).filter { it.endsWith(".vard") }.sorted()
+        // app sources, package sources (`@name/...`) and vard.lock (the package graph)
+        val files = listAssets(appDir).filter { it.endsWith(".vard") || it == "$appDir/vard.lock" }.sorted()
             .map { path -> path.removePrefix("$appDir/") to assets.open(path).bufferedReader().use { it.readText() } }
         val fonts = listAssets("$appDir/fonts").filter { it.endsWith(".ttf") || it.endsWith(".otf") }
 

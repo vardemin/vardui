@@ -17,6 +17,20 @@ fn sources(example: &str) -> Vec<(String, String)> {
             out.push((p.file_name().unwrap().to_string_lossy().to_string(), std::fs::read_to_string(&p).unwrap()));
         }
     }
+    // packages arrive the way `vard bundle` lays them out on a device: `@name/...` + vard.lock
+    if let Ok(lock) = std::fs::read_to_string(format!("{}/vard.lock", dir)) {
+        for line in lock.lines().filter(|l| l.starts_with("pkg ")) {
+            let name = line.split_whitespace().nth(1).unwrap();
+            let rel = line.split_whitespace().find_map(|kv| kv.strip_prefix("src=path:")).expect("examples use path packages");
+            for e in std::fs::read_dir(format!("{}/{}", dir, rel)).unwrap() {
+                let p = e.unwrap().path();
+                if p.extension().is_some_and(|x| x == "vard") {
+                    out.push((format!("@{}/{}", name, p.file_name().unwrap().to_string_lossy()), std::fs::read_to_string(&p).unwrap()));
+                }
+            }
+        }
+        out.push(("vard.lock".to_string(), lock));
+    }
     out.sort();
     out
 }

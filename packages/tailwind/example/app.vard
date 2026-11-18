@@ -1,0 +1,19 @@
+// The package's usage proof: compiled and tested on every publish.
+view App {
+  state email = ""
+  state saved = false
+  Column(padding: 24, gap: 16, background: .background, grow: 1) {
+    TwCard {
+      Row(gap: 12, align: .center) {
+        Avatar("LA", size: 40, color: .indigo600)
+        Text("Leslie Alexander", size: 14, weight: .semibold, grow: 1)
+        Badge(saved ? "Saved" : "Draft", tone: saved ? .green : .gray)
+      }
+      Field("Email", value: email, placeholder: "you@example.com")
+      Row(gap: 8, justify: .end) {
+        TwButton("Cancel", onTap: { email = "" }, variant: .ghost)
+        TwButton("Save", onTap: { saved = true }, enabled: email != "")
+      }
+    }
+  }
+}

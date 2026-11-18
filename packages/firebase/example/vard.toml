@@ -1,0 +1,8 @@
+[app]
+name = "firebase-example"
+
+[dependencies]
+firebase = { path = ".." }
+
+[policy]
+allow = ["native"]

@@ -177,6 +177,7 @@ impl<'a> Parser<'a> {
                     let sp = start.to(self.prev_span());
                     self.diags.push(
                         Diag::error("E0111", sp, "Vard has no imports: all files of a project share one namespace")
+                            .help("dependencies go in vard.toml (`vard add NAME`); their declarations are visible without imports")
                             .fix(sp, ""),
                     );
                     continue;
@@ -349,7 +350,15 @@ impl<'a> Parser<'a> {
     fn type_ref(&mut self) -> PResult<TypeRef> {
         let mut t = match self.peek().clone() {
             Tok::Ident(name) => {
-                let sp = self.bump().span;
+                let mut sp = self.bump().span;
+                let mut name = name;
+                // `pkg.Type` — a type qualified by its package (see link.rs)
+                if let (Tok::Dot, Tok::Ident(t)) = (self.peek().clone(), self.peek_at(1).clone()) {
+                    self.bump();
+                    let tsp = self.bump().span;
+                    name = format!("{}.{}", name, t);
+                    sp = sp.to(tsp);
+                }
                 TypeRef::Named(name, sp)
             }
             Tok::LBracket => {
@@ -585,8 +594,19 @@ impl<'a> Parser<'a> {
                 Ok(self.prog.add_node(UiNode::For { var, index_var, iter, key, body, span }))
             }
             Tok::Ident(name) => {
-                let name_span = self.bump().span;
-                if !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                let mut name_span = self.bump().span;
+                let mut name = name;
+                // `pkg.View(...)` — a view qualified by its package (see link.rs)
+                if let (Tok::Dot, Tok::Ident(v)) = (self.peek().clone(), self.peek_at(1).clone()) {
+                    if v.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                        self.bump();
+                        let vsp = self.bump().span;
+                        name = format!("{}.{}", name, v);
+                        name_span = name_span.to(vsp);
+                    }
+                }
+                let private_view = name.starts_with('_') && name.trim_start_matches('_').chars().next().is_some_and(|c| c.is_ascii_uppercase());
+                if !name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.contains('.') && !private_view {
                     if matches!(self.peek(), Tok::Newline | Tok::RBrace | Tok::Eof) {
                         self.end_of_stmt()?;
                         return Ok(self.prog.add_node(UiNode::Slot { name, span: name_span }));

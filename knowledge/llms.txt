@@ -3,7 +3,8 @@
 Vard is a declarative, statically typed UI language. Files: `*.vard`. All files in a
 project share one namespace (no imports). The app root is `view App`.
 Deeper topics: `vard doc design` (styling, Tailwind/M3/iOS mapping), `vard doc native`
-(push, permissions, storage, back, insets, native modules), `vard doc std`.
+(push, permissions, storage, back, insets, native modules), `vard doc packages`
+(dependencies, registries, publishing), `vard doc std`.
 
 ## Loop
 1. edit .vard  2. `vard check --fix` (applies machine fixes, prints the rest)
@@ -113,7 +114,7 @@ id: "name" → stable test handle `#name`.
 ## Color tokens (light/dark automatically)
 .background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear
 Use .text/.muted on .background/.surface, .onPrimary on .primary. Custom: `theme { brand: #... }`.
-`vard add tailwind` adds the Tailwind palette (.slate50 … .rose950) + components (TwButton TwCard Badge Avatar Field).
+Package `tailwind` (`vard add tailwind`): Tailwind palette (.slate50 … .rose950) + components (TwButton TwCard Badge Avatar Field).
 
 ## Std views (source: `vard doc std`)
 Button(label, onTap: fn() = {}, kind: .filled|.tonal|.outline|.text = .filled, enabled: Bool = true)
@@ -140,7 +141,16 @@ Edge-to-edge always: if no view mentions `safeArea`, the root is padded automati
 enums lists maps optionals; results that arrive later = callback param `fn(T)` / `fn(T, E)`.
 Headless calls are logged as `native: name(args)`; user externs answer from `mock`, or stay
 pending until `resolve`/`send`. Device side: `vard bindings --kotlin` (typed base class);
-SDK adapters: `vard add firebase`. A missing native implementation is R0010.
+SDK adapters are packages: `vard add firebase --allow native`. A missing native implementation is R0010.
+
+## Packages (`vard doc packages`)
+vard search WORDS | vard info NAME | vard add NAME[@1.4] | vard doc NAME | vard update [--major] | vard remove NAME
+Dependencies live in vard.toml; their public names are visible without imports. Never guess a
+name (P001 = no such package: search). Your declarations win over packages; two packages
+exporting a name: `pkg.Name(...)` (E0231). Only direct deps are visible (E0232); `_x` is
+package-private (E0230). P008 = needs a sensitive capability: ask the user, never bypass.
+After `vard update`: `vard check --fix` applies the packages' migrations (E0234).
+Package files show as `@name/file.vard` — read-only. Package externs answer headless from its [sim].
 
 ## Actions (`vard run --do`, .vtest files, MCP vard_run) — one per line or `;`
 tree | layout | tap SEL | type SEL "text" | submit SEL | focus SEL | scroll SEL DY | why SEL | find SEL
@@ -156,7 +166,8 @@ Mutating actions print a diff: `+` added, `-` removed, `~` changed lines.
 Each run starts fresh and is deterministic: replay the whole sequence, don't keep sessions.
 
 ## Diagnostics
-E01xx syntax, E02xx names/elements/props, E03xx types, E04xx mutability, W warnings,
-R runtime (printed as `! R0003 ... (file:line)`), L UI lints (overflow, tap size, contrast).
+E01xx syntax, E02xx names/elements/props/packages, E03xx types, E04xx mutability, W warnings,
+R runtime (printed as `! R0003 ... (file:line)`), L UI lints (overflow, tap size, contrast),
+P packages/registries (vard.toml line + fix).
 Each has file:line, the source line and `fix:` (auto-applied by --fix) or `help:`.
 Unclear? `vard explain CODE`. Element/view signature: `vard doc Name`.

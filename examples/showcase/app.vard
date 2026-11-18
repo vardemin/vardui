@@ -1,4 +1,4 @@
-// "Make it look like Tailwind UI": the kit from `vard add tailwind` (tailwind.vard) plus
+// "Make it look like Tailwind UI": the `tailwind` package (vard.toml) plus
 // plain props. Shadows, gradients, per-corner radii, Grid, wrapping rows, weights,
 // letter spacing, offsets — everything a CSS framework design needs.
 

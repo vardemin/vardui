@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use vard_lang::ast::{Program, TypeRef};
 use vard_lang::Compilation;
 
-/// Files added by `vard add <module>` ship their own native implementation.
+/// Legacy: firebase.vard copied into a project by an old `vard add firebase`.
 pub const MODULE_FILES: &[&str] = &["firebase.vard"];
 
 pub struct Opts<'a> {
@@ -15,8 +15,12 @@ pub struct Opts<'a> {
     pub class: &'a str,
 }
 
+/// Package files (`@name/...`) ship their own native implementation ([native.android]).
 fn is_module_file(c: &Compilation, file: u16) -> bool {
     let path = &c.sources.file(file).path;
+    if path.starts_with('@') {
+        return true;
+    }
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     MODULE_FILES.contains(&name)
 }

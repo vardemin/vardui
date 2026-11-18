@@ -1,0 +1,44 @@
+// Firebase for Vard — package `firebase` (`vard add firebase`). Native side: native/android
+// (a Gradle library the Android shell includes automatically; google-services.json goes into
+// platforms/android/app/).
+//
+// Auth, Firestore, Analytics and Cloud Messaging. Push needs nothing here: the std events
+// `pushReceived` / `pushOpened` / `pushTokenChanged` and `getPushToken` are fed by FCM.
+// Headless (`vard run`, tests) these are ordinary externs: `mock` or `resolve` them.
+
+struct FirebaseUser { uid: String, email: String? = nil, displayName: String? = nil, isAnonymous: Bool = false }
+struct FirebaseError { code: String, message: String = "" }
+struct AuthResult { user: FirebaseUser? = nil, error: FirebaseError? = nil }
+
+// ---- Auth ----
+extern fn authCurrentUser() -> FirebaseUser?
+extern fn authSignInAnonymously(done: fn(AuthResult))
+extern fn authSignInWithEmail(email: String, password: String, done: fn(AuthResult))
+extern fn authCreateUser(email: String, password: String, done: fn(AuthResult))
+extern fn authSendPasswordReset(email: String, done: fn(FirebaseError?))
+extern fn authSignOut()
+// fires on sign-in / sign-out (also once at start with the current user)
+extern event authChanged(user: FirebaseUser?)
+
+// ---- Firestore ----
+// Documents are YOUR structs: fields map by name, `id` receives the document id.
+// The native side implements every name with these prefixes, whatever the types:
+//   firestoreGet<X>(path: String, done: fn(T?, FirebaseError?))
+//   firestoreSet<X>(path: String, data: T, done: fn(FirebaseError?))        (merge)
+//   firestoreAdd<X>(collection: String, data: T, done: fn(String?, FirebaseError?))   new id
+//   firestoreDelete<X>(path: String, done: fn(FirebaseError?))
+//   firestoreList<X>(collection: String, done: fn([T], FirebaseError?))
+//   firestoreWhere<X>(collection: String, field: String, op: String, value: String, done: fn([T], FirebaseError?))
+//   firestoreListen<X>(collection: String, onChange: fn([T]))                 live updates
+// Declare one set per document type; `Note` below is an example to rename or copy.
+struct Note { id: String = "", title: String = "", body: String = "", done: Bool = false }
+extern fn firestoreGetNote(path: String, done: fn(Note?, FirebaseError?))
+extern fn firestoreSetNote(path: String, data: Note, done: fn(FirebaseError?))
+extern fn firestoreAddNote(collection: String, data: Note, done: fn(String?, FirebaseError?))
+extern fn firestoreDeleteNote(path: String, done: fn(FirebaseError?))
+extern fn firestoreListNotes(collection: String, done: fn([Note], FirebaseError?))
+extern fn firestoreListenNotes(collection: String, onChange: fn([Note]))
+
+// ---- Analytics ----
+extern fn analyticsLog(name: String, params: [String: String] = [:])
+extern fn analyticsSetUserId(id: String?)

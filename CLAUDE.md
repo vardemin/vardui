@@ -1,13 +1,22 @@
 # Working on the VardUI framework
 
-Rust workspace: `crates/vard-lang` (front-end), `crates/vard-runtime` (reactive core, layout,
-inspection, raster, native bridge + headless platform `Sim`), `crates/vard-cli` (`vard` binary
-+ MCP server + `bindings`), `crates/vard-ffi` (C ABI/JNI for native hosts). Android host in
-`platforms/android` (`:vard` library, `:app` shell, `:vard-firebase` module). Agent-facing
-knowledge lives in `knowledge/` and is compiled into the binary (`include_str!`), so rebuild
-after editing it.
+Rust workspace: `crates/vard-lang` (front-end + package linker `link.rs` + API/capabilities
+`api.rs`), `crates/vard-runtime` (reactive core, layout, inspection, raster, native bridge +
+headless platform `Sim`), `crates/vard-pkg` (vard.toml, semver, MVS resolver, vard.lock, .vpk,
+registries + signed log), `crates/vard-cli` (`vard` binary + MCP server + `bindings` + package
+commands `pkg.rs` + registry server `server.rs`), `crates/vard-ffi` (C ABI/JNI for native hosts).
+Android host in `platforms/android` (`:vard` library, `:app` shell; packages' native modules are
+included by `settings.gradle.kts`). Agent-facing knowledge lives in `knowledge/` and is
+compiled into the binary (`include_str!`), so rebuild after editing it. `packages/*` are the
+packages bundled into the binary as the `builtin` registry (`vard-pkg/build.rs`).
 
-- Build/test: `cargo test --workspace`, then `vard test` on every `examples/*` project.
+- Build/test: `cargo test --workspace`, then `vard test` on every `examples/*` project and
+  every `packages/*` (their `example/` apps are the packages' usage proofs).
+- A bundled package must pass the publish gate (`crates/vard-cli/tests/packages.rs` checks it):
+  capabilities equal to `vard api --caps`, AGENT.md ≤ 6 KB, tests green. Changing a package's
+  public API means a semver bump in its vard.toml (and `[[migrate]]` for renames).
+- Every package-manager error is a `Problem` with a stable `P0xx` code and an entry in
+  `vard_pkg::EXPLAIN`; compiler package errors are `E023x` in `explain.rs`.
 - Elements, props, tokens, globals and habit aliases are defined once in
   `crates/vard-lang/src/registry.rs`; runtime prop handling is `Node::apply` in
   `crates/vard-runtime/src/node.rs` — keep them in sync. Paint-only props go in
@@ -22,6 +31,7 @@ after editing it.
   points (`jni_api.rs`) must match `VardNative.kt`; Rust calls `VardHost.call` and
   `VardHost.measure` by name. Android build: `platforms/android/README.md` (needs cargo-ndk +
   NDK; not part of `cargo test`).
-- When language behaviour changes, update `knowledge/llms.txt`, `design.md`/`native.md` and
-  the skills in the same change; keep skill snippets compiling in `examples/patterns`.
+- When language behaviour changes, update `knowledge/llms.txt`, `design.md`/`native.md`/
+  `packages.md` and the skills in the same change; keep skill snippets compiling in
+  `examples/patterns`.
 - Human docs (README, docs/) are in Russian; agent docs (knowledge/) in English.

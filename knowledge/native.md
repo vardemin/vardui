@@ -59,7 +59,7 @@ getPushToken(t => { token = t ?? "" })               // nil without a push provi
 showNotification("Title", "Body", ["screen": "inbox"])   // local notification
 ```
 Ask `requestPermission(.notifications, ...)` before relying on notifications (Android 13+).
-Android: the provider is FCM via the `vard-firebase` module (`-Pvard.firebase=true`). Debug
+Android: the provider is FCM via the `firebase` package's native module. Debug
 builds accept injected pushes through the same path:
 `adb shell am broadcast -a dev.vard.DEBUG_PUSH -p dev.vard.host --es title T --es body B --es data '{"k":"v"}'`.
 
@@ -104,11 +104,16 @@ parameters receives a JSON array of both: `resolve firestoreListNotes [[{"title"
    or ship it as a library with `<meta-data android:name="dev.vard.module.places"
    android:value="com.example.PlacesImpl"/>` in its manifest (auto-registered).
 - Native values cross as JSON and are decoded by the *declared* Vard type, so one native
-  function can serve many app types (vard-firebase's `firestoreGet*` works for any struct).
+  function can serve many app types (the firebase package's `firestoreGet*` works for any struct).
+- Ship it as a package so other apps get it with one command: put the Gradle library in
+  `native/android/`, declare `[native.android] module = "..."`, `gradle = "native/android"`
+  and `[sim]` answers in vard.toml; the Android shell includes the module automatically
+  (`vard doc packages`).
 - An extern without a native implementation reports `R0010` on the device.
 
-## Firebase (`vard add firebase`)
+## Firebase (`vard add firebase --allow native`)
 Auth (`authSignInWithEmail`, `authChanged`, ...), Firestore with your own structs
 (`firestoreGet<X>`/`Set`/`Add`/`Delete`/`List`/`Where`/`Listen` — declare one set per
 document type), Analytics (`analyticsLog`), FCM push through the std push events.
-Android: `google-services.json` in `platforms/android/app/`, build with `-Pvard.firebase=true`.
+Android: `google-services.json` in `platforms/android/app/`; the shell includes the package's
+native module by itself. Headless: `authCurrentUser` answers nil ([sim]); the rest is pending.

@@ -1,5 +1,5 @@
 // Notes on Firebase: anonymous auth, a live Firestore collection, analytics.
-// firebase.vard comes from `vard add firebase`; on Android build with -Pvard.firebase=true.
+// The `firebase` package (vard.toml); on Android its native module is included automatically.
 
 view App {
   state user: FirebaseUser? = nil

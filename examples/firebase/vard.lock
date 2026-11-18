@@ -1,0 +1,4 @@
+# vard.lock — written by `vard install`. Commit it; review caps= changes like code.
+lock 1
+root deps=firebase
+pkg firebase 1.0.0 src=path:../../packages/firebase caps=native deps=

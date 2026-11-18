@@ -13,3 +13,4 @@ path = "src/main.rs"
 vard-lang = { path = "../vard-lang" }
 vard-runtime = { path = "../vard-runtime" }
 serde_json = "1"
+vard-pkg = { path = "../vard-pkg" }
