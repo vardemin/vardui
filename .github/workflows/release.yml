@@ -1,0 +1,117 @@
+# Push a tag `vX.Y.Z` → a GitHub release with `vard` binaries for Linux, macOS and Windows.
+# Assets: vard-<target>.tar.gz (vard-<target>.zip on Windows) + .sha256 files; the install
+# scripts (install.sh, install.ps1) and the public registry's CI download these.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "VardUI $GITHUB_REF_NAME" --generate-notes --verify-tag
+
+  build:
+    needs: create
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          rustup target add ${{ matrix.target }}
+          cargo build --release --locked -p vard-cli --target ${{ matrix.target }}
+      - name: Package and upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd target/${{ matrix.target }}/release
+          name=vard-${{ matrix.target }}
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "$name.zip" vard.exe >/dev/null
+            file="$name.zip"
+          else
+            tar -czf "$name.tar.gz" vard
+            file="$name.tar.gz"
+          fi
+          if command -v sha256sum >/dev/null; then sha256sum "$file" > "$file.sha256"; else shasum -a 256 "$file" > "$file.sha256"; fi
+          gh release upload "$GITHUB_REF_NAME" "$file" "$file.sha256" --clobber
+
+  # vard.mcpb (one bundle: a universal macOS binary, Linux x86_64, Windows x86_64) and its
+  # entry in the official MCP Registry (io.github.vardemin/vardui), via GitHub OIDC.
+  mcp:
+    needs: build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MCP_PUBLISHER_VERSION: v1.8.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build vard.mcpb
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dl bundle/server
+          gh release download "$GITHUB_REF_NAME" -D dl -p 'vard-*-apple-darwin.tar.gz' -p 'vard-x86_64-unknown-linux-gnu.tar.gz' -p 'vard-x86_64-pc-windows-msvc.zip'
+          mkdir dl/arm dl/x64
+          tar -xzf dl/vard-aarch64-apple-darwin.tar.gz -C dl/arm
+          tar -xzf dl/vard-x86_64-apple-darwin.tar.gz -C dl/x64
+          lipo -create dl/arm/vard dl/x64/vard -output bundle/server/vard
+          tar -xzf dl/vard-x86_64-unknown-linux-gnu.tar.gz -C dl && mv dl/vard bundle/server/vard-linux
+          unzip -q dl/vard-x86_64-pc-windows-msvc.zip -d bundle/server
+          chmod +x bundle/server/vard bundle/server/vard-linux
+          jq --arg v "$version" '.version = $v' mcpb/manifest.json > bundle/manifest.json
+          (cd bundle && zip -qr ../vard.mcpb .)
+          gh release upload "$GITHUB_REF_NAME" vard.mcpb --clobber
+          sha=$(shasum -a 256 vard.mcpb | cut -d' ' -f1)
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/vard.mcpb"
+          jq --arg v "$version" --arg u "$url" --arg s "$sha" \
+            '.version = $v | .packages[0].identifier = $u | .packages[0].fileSha256 = $s' server.json > server.tmp && mv server.tmp server.json
+          cat server.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

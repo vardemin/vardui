@@ -16,7 +16,7 @@ approved, and (3) nobody between the author and the device can substitute the co
 | A private registry's dependency replaced by a public one (dependency confusion) | a dependency comes from exactly one registry; where it resolved is recorded in the author's index entry | — |
 | An archive substituted on the host/mirror/CDN | content addressing: the archive is checked against the `sha256` of the index and the lockfile | `P004` |
 | The index substituted | the `(name, version, sha256)` entry must be in the signed log | `P004` |
-| The whole registry substituted / MITM | the registry key is pinned on first contact; a changed key is an error | `P005` |
+| The whole registry substituted / MITM | the public registry's key is compiled into `vard`; other registries' keys are pinned on first contact; a changed key is an error | `P005` |
 | History rewritten (an old version quietly replaced) | the log is a hash chain; the client checks that the head it saw is a prefix; versions are immutable | `P005`, `P016` |
 | A package breaks other code by "capturing" names | your own names win; transitive dependencies are invisible; a conflict of two packages needs explicit qualification | `E0231`, `E0232` |
 | Two packages claim one native function | native names are global, a conflict is a compile error | `E0233` |

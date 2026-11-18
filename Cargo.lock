@@ -663,7 +663,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "vard-cli"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "vard-lang",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "vard-ffi"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "jni",
  "serde_json",
@@ -683,11 +683,11 @@ dependencies = [
 
 [[package]]
 name = "vard-lang"
-version = "0.1.0"
+version = "0.3.0"
 
 [[package]]
 name = "vard-pkg"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ed25519-dalek",
  "getrandom",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "vard-runtime"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "dejavu",
  "fontdue",

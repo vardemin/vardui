@@ -45,8 +45,13 @@ allow = ["native", "push"]                      # approved sensitive capabilitie
 
 [registries]
 acme = "https://vard.acme.dev"                  # or a directory
-default = "acme"                                # default: builtin (packages shipped with vard)
+default = "acme"                                # default: vard (the public registry)
 ```
+Registries: the project's [registries], ~/.vard/config.toml, then the public registry `vard`
+(default; https://vardemin.github.io/vard-registry, publish = a pull request to
+github.com/vardemin/vard-registry), then `builtin` (bundled, offline). Offline:
+`--registry builtin` or VARD_OFFLINE=1.
+
 vard.lock is generated: one line per package with `sha256=`, `api=`, `caps=`, `deps=`. Commit
 it. Any vard command reinstalls when vard.toml changed, so editing vard.toml by hand is fine.
 

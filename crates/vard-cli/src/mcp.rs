@@ -179,7 +179,7 @@ fn call(name: &str, a: &Value) -> Value {
             text_result(t, ok)
         }
         "vard_publish_check" => {
-            let (t, ok) = pkg::cmd_publish(path, s("registry"), None, true);
+            let (t, ok) = pkg::cmd_publish(path, s("registry"), None, None, true);
             text_result(t, ok)
         }
         "vard_bindings" => {

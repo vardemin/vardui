@@ -715,7 +715,9 @@ fn publish_target(registry: Option<&str>, p: &Project) -> Result<(String, String
     Ok((r.name.clone(), r.url.clone()))
 }
 
-pub fn cmd_publish(dir: &str, registry: Option<&str>, token_arg: Option<&str>, dry_run: bool) -> Out {
+/// `owner_arg`: for a directory registry written by trusted CI (the public registry's
+/// GitHub workflow passes the pull request author), instead of a token.
+pub fn cmd_publish(dir: &str, registry: Option<&str>, token_arg: Option<&str>, owner_arg: Option<&str>, dry_run: bool) -> Out {
     let p = match Project::open(dir) {
         Ok(p) => p,
         Err(e) => return (e, false),
@@ -754,7 +756,10 @@ pub fn cmd_publish(dir: &str, registry: Option<&str>, token_arg: Option<&str>, d
             Some(o) => o,
             None => return fail(Problem::new("P018", "the token is not valid for this registry"), "vard.toml"),
         },
-        None => prior.first().map(|e| e.owner.clone()).unwrap_or_else(|| "local".into()),
+        None => match owner_arg {
+            Some(o) => o.to_string(),
+            None => prior.first().map(|e| e.owner.clone()).unwrap_or_else(|| "local".into()),
+        },
     };
     let g = gate(&p.dir, &prior, &names, &owner);
     if !g.ok || dry_run {

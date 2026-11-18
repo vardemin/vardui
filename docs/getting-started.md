@@ -2,7 +2,19 @@
 
 ## Install
 
-You need Rust 1.98 (pinned in `rust-toolchain.toml`; rustup fetches it automatically).
+Prebuilt binaries for Linux, macOS and Windows are on
+[GitHub Releases](https://github.com/vardemin/vardui/releases). The install scripts download
+the latest one, verify its SHA-256 and put it into `~/.vard/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vardemin/vardui/master/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/vardemin/vardui/master/install.ps1 | iex
+```
+
+From source (Rust 1.98, pinned in `rust-toolchain.toml`; rustup fetches it automatically):
 
 ```bash
 git clone https://github.com/vardemin/vardui.git
@@ -10,8 +22,8 @@ cd vardui
 cargo build --release
 ```
 
-The binary is `target/release/vard`. Put the directory on `PATH` or call it by full path.
-Everything a person or an agent needs — compiler, headless runtime, test runner, reference,
+The binary is `vard` (`target/release/vard` from source). Everything a person or an agent
+needs — compiler, headless runtime, test runner, reference,
 package manager, registry server and MCP server — is in this one file.
 
 ## First project

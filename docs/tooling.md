@@ -38,15 +38,30 @@ a project directory (default: the current directory).
 | `vard registry verify DIR\|URL` | verify signatures, the log chain and every archive |
 
 Environment variables: `VARD_HOME` (cache, keys, tokens; default `~/.vard`),
-`VARD_REGISTRY` (the default registry for every project), `VARD_TOKEN` (publish token).
+`VARD_REGISTRY` (the default registry for every project), `VARD_OFFLINE=1` (never contact
+the public registry; `builtin` becomes the default), `VARD_TOKEN` (publish token).
+`vard publish --owner LOGIN` sets the owner when trusted CI writes a directory registry
+(the public registry's workflow passes the pull request author).
 
 ## The MCP server
 
-`vard mcp` speaks JSON-RPC 2.0 over stdio. `vard new` puts `.mcp.json` into the project:
+`vard mcp` speaks JSON-RPC 2.0 over stdio and works on the files of the project it is
+pointed at, so it runs on the developer's machine — there is nothing to host. `vard new` puts
+`.mcp.json` into the project:
 
 ```json
 { "mcpServers": { "vard": { "command": "vard", "args": ["mcp"] } } }
 ```
+
+Other ways to get it:
+
+- **MCP Registry**: `io.github.vardemin/vardui`
+  ([registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io)), published
+  by the release workflow; clients that read the registry can install it directly.
+- **`vard.mcpb`** on every [release](https://github.com/vardemin/vardui/releases) — a one-file
+  bundle (macOS universal, Linux x86_64, Windows x86_64) for clients that install MCP bundles,
+  such as Claude Desktop.
+- Claude Code without a project file: `claude mcp add vard -- vard mcp`.
 
 | Tool | Equivalent |
 |---|---|

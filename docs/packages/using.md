@@ -67,8 +67,11 @@ The manifest can be edited by hand: any `vard` command (check, run, test, doc) n
 `vard.lock` is stale and reinstalls, saying so in one line.
 
 Registries are looked up in order: the project's `[registries]` → `~/.vard/config.toml` →
-`builtin` (the packages bundled with the toolchain). The default registry is `builtin` unless
-`default` (or the `VARD_REGISTRY` variable) says otherwise. Each dependency comes from
+the public registry `vard` ([vardemin/vard-registry](https://github.com/vardemin/vard-registry),
+served at `https://vardemin.github.io/vard-registry`) → `builtin` (the packages bundled with
+the toolchain, available offline). The default registry is `vard` unless `default` (or the
+`VARD_REGISTRY` variable) says otherwise; `VARD_OFFLINE=1` removes the public registry and
+makes `builtin` the default. Each dependency comes from
 **exactly one** registry — its own `registry = ...` or the default — never "wherever it was
 found": this rules out dependency confusion attacks.
 

@@ -1,0 +1,29 @@
+# Tests on every push and pull request: the Rust workspace, then `vard test` on every
+# example app and bundled package (the same checks CLAUDE.md asks for).
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # never reach the public registry from tests
+      VARD_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --workspace
+      - name: vard test (examples and packages)
+        shell: bash
+        run: |
+          cargo build --release -p vard-cli
+          for e in examples/* packages/*; do ./target/release/vard test "$e"; done

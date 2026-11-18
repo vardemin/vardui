@@ -287,7 +287,12 @@ impl Registry {
     }
 
     fn problem(&self, msg: impl Into<String>) -> Problem {
-        Problem::new("P002", format!("registry `{}` ({}): {}", self.name, self.url, msg.into()))
+        let p = Problem::new("P002", format!("registry `{}` ({}): {}", self.name, self.url, msg.into()));
+        if matches!(self.kind, Kind::Http(_)) {
+            p.fix("offline? packages bundled with vard: --registry builtin (or VARD_OFFLINE=1); cached packages keep working")
+        } else {
+            p
+        }
     }
 
     /// Every version of `name` (oldest first); empty if the registry has no such package.
@@ -396,6 +401,15 @@ pub fn parse_index(text: &str) -> Vec<IndexEntry> {
 
 /// Trust on first use, then never silently: a changed key is an error (like SSH).
 fn pin_key(id: &str, key: &str) -> Result<(), Problem> {
+    // the public registry's key ships inside the binary: no trust-on-first-use window
+    if id == crate::PUBLIC_REGISTRY_URL {
+        return if key == crate::PUBLIC_REGISTRY_KEY {
+            Ok(())
+        } else {
+            Err(Problem::new("P005", format!("{} presents signing key {}…, but this vard expects {}…", id, &key[..8.min(key.len())], &crate::PUBLIC_REGISTRY_KEY[..8]))
+                .fix("someone is impersonating the public registry, or it rotated its key: update vard"))
+        };
+    }
     let path = net::home().join("known_registries");
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     for line in text.lines() {

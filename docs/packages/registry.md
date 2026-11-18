@@ -5,6 +5,25 @@ A Vard registry is **static files**. Reading is plain `GET`s with no server logi
 anywhere — in a directory, in an S3/R2/GCS bucket behind a CDN, on GitHub Pages, on nginx —
 and be served through untrusted mirrors.
 
+## The public registry
+
+[`vardemin/vard-registry`](https://github.com/vardemin/vard-registry) is the default
+registry of `vard` (name `vard`, `https://vardemin.github.io/vard-registry`). It is this
+same format, kept in a GitHub repository and served by GitHub Pages — free for open source,
+no server to run:
+
+- **Publishing is a pull request.** Copy the package to `submissions/<name>/` and open a
+  PR; the `check` workflow runs `vard publish --dry-run` with the PR author as the owner.
+  After a merge, the `publish` workflow publishes as the PR author, removes the submission,
+  commits `public/` and redeploys Pages.
+- **The signing key** lives only in the repository's Actions secrets (and with the
+  maintainer); its public half is **compiled into `vard`**, so even the first contact is
+  verified — no trust-on-first-use window.
+- **Ownership** is the GitHub login of the first publisher; later versions must come from
+  their pull requests.
+
+The rest of this page describes the format and how to run a registry of your own.
+
 ## Create a registry
 
 ```bash

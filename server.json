@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.vardemin/vardui",
+  "title": "Vard",
+  "description": "AI-first UI framework tools: type-check Vard apps with machine fixes, run them headless and drive them with actions, test, read docs, find and add packages.",
+  "repository": {
+    "url": "https://github.com/vardemin/vardui",
+    "source": "github"
+  },
+  "websiteUrl": "https://vardemin.github.io/vardui/",
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/vardemin/vardui/releases/download/v0.0.0/vard.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

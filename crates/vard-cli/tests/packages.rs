@@ -17,7 +17,7 @@ impl Env {
         Env { root }
     }
     fn vard(&self, args: &[&str]) -> (String, bool) {
-        let out = Command::new(env!("CARGO_BIN_EXE_vard")).args(args).current_dir(&self.root).env("VARD_HOME", self.root.join("home")).env_remove("VARD_REGISTRY").output().unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_vard")).args(args).current_dir(&self.root).env("VARD_HOME", self.root.join("home")).env_remove("VARD_REGISTRY").env("VARD_OFFLINE", "1").output().unwrap();
         (String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr), out.status.success())
     }
     fn ok(&self, args: &[&str]) -> String {

@@ -110,5 +110,5 @@ delivered without rebuilding the APK as long as the native part did not change. 
 | publish gate: compile, capabilities, tests, semver, AGENT.md budget, name | quarantine for new packages, build attestations (provenance) |
 | static registry, signed log, key pinning, prefix check | Merkle inclusion proofs instead of the full log; key rotation |
 | `vard registry serve` with token-based publishing, yank | web UI, organizations and roles |
-| the `builtin` registry (tailwind, firebase) | an official public registry |
+| the public registry `vard` on GitHub Pages, publishing by pull request; the `builtin` registry | a web UI for the public registry |
 | `vard bundle` with the native fingerprint; automatic native modules on Android | an OTA update client in the Android/iOS hosts; iOS modules in packages |

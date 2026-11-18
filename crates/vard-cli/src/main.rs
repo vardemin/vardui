@@ -50,7 +50,7 @@ packages
   vard update [NAME] [--major]           raise requirements to the newest versions; prints API diffs
   vard api [PATH|NAME] [--caps]          public API and capabilities computed by the compiler
   vard pack [PATH] [--out FILE]          deterministic .vpk archive of a package
-  vard publish [PATH] --registry DIR|URL|NAME [--token T] [--dry-run]
+  vard publish [PATH] --registry DIR|URL|NAME [--token T | --owner LOGIN] [--dry-run]
                                          run the gate (compile, caps, tests, semver, docs) and publish
   vard yank NAME@VER --registry DIR [--undo]
   vard bundle [PATH] --out DIR|FILE.vpk  everything a device needs (+ bundle.json, native fingerprint)
@@ -78,7 +78,7 @@ fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
 }
 
-const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--name", "--addr"];
+const WITH_VALUE: &[&str] = &["--do", "--script", "--view", "--size", "--package", "--class", "--out", "--insets", "--path", "--registry", "--allow", "--token", "--owner", "--name", "--addr"];
 
 /// Arguments that are not flags or flags' values.
 fn positionals(args: &[String]) -> Vec<&str> {
@@ -166,7 +166,7 @@ fn dispatch(args: &[String]) -> (String, bool) {
         },
         "api" => pkg::cmd_api(positional(rest).unwrap_or("."), flag(rest, "--caps")),
         "pack" => pkg::cmd_pack(positional(rest).unwrap_or("."), opt(rest, "--out")),
-        "publish" => pkg::cmd_publish(positional(rest).unwrap_or("."), opt(rest, "--registry"), opt(rest, "--token"), flag(rest, "--dry-run")),
+        "publish" => pkg::cmd_publish(positional(rest).unwrap_or("."), opt(rest, "--registry"), opt(rest, "--token"), opt(rest, "--owner"), flag(rest, "--dry-run")),
         "yank" => match pos.first() {
             Some(s) => pkg::cmd_yank(s, opt(rest, "--registry"), flag(rest, "--undo")),
             None => ("usage: vard yank NAME@VERSION --registry DIR [--undo]".into(), false),

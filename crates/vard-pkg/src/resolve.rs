@@ -18,7 +18,8 @@ use std::rc::Rc;
 use std::path::{Path, PathBuf};
 
 /// Registries visible to a project: its vard.toml [registries], then ~/.vard/config.toml,
-/// then `builtin`. A dependency comes from exactly one registry — its own `registry = ...`
+/// then the public registry `vard` (the default; skipped with VARD_OFFLINE=1), then
+/// `builtin`. A dependency comes from exactly one registry — its own `registry = ...`
 /// or the default — never "whichever has it" (no dependency confusion).
 pub struct Registries {
     list: RefCell<Vec<Rc<Registry>>>,
@@ -56,12 +57,23 @@ impl Registries {
                 }
             }
         }
+        let offline = std::env::var_os("VARD_OFFLINE").is_some_and(|v| !v.is_empty() && v != "0");
+        if !offline {
+            push(crate::PUBLIC_REGISTRY_NAME, crate::PUBLIC_REGISTRY_URL, &mut list);
+        }
         push("builtin", "builtin", &mut list);
         if let Ok(env) = std::env::var("VARD_REGISTRY") {
-            push("env", &env, &mut list);
-            default = Some("env".into());
+            // a known name or location becomes the default; anything else is registered as `env`
+            match list.iter().find(|r| r.name == env || r.url == env) {
+                Some(r) => default = Some(r.name.clone()),
+                None => {
+                    push("env", &env, &mut list);
+                    default = Some("env".into());
+                }
+            }
         }
-        Registries { list: RefCell::new(list), default: default.unwrap_or_else(|| "builtin".into()) }
+        let fallback = if offline { "builtin" } else { crate::PUBLIC_REGISTRY_NAME };
+        Registries { list: RefCell::new(list), default: default.unwrap_or_else(|| fallback.into()) }
     }
 
     pub fn all(&self) -> Vec<Rc<Registry>> {

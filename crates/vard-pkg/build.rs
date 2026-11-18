@@ -7,7 +7,7 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
     entries.sort();
     for p in entries {
         let name = p.file_name().unwrap().to_string_lossy().to_string();
-        if name.starts_with('.') || name == "target" || name == "build" || name.ends_with(".vpk") {
+        if name.starts_with('.') || name == "target" || name == "build" || name.ends_with(".vpk") || name == "vard.lock" {
             continue;
         }
         if p.is_dir() {

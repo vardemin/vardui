@@ -25,6 +25,12 @@ use sha2::{Digest, Sha256};
 
 pub const VARD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The public registry: a GitHub repository (vardemin/vard-registry) served by GitHub
+/// Pages. Its signing key is compiled in, so the very first contact is already verified.
+pub const PUBLIC_REGISTRY_NAME: &str = "vard";
+pub const PUBLIC_REGISTRY_URL: &str = "https://vardemin.github.io/vard-registry";
+pub const PUBLIC_REGISTRY_KEY: &str = "0f614a9c2b3b110841ebfbb449142b11b3596bc165ecf42023dc749c5cab4286";
+
 /// AGENT.md budget: what an agent reads to use a package (~1500 tokens).
 pub const AGENT_DOC_BUDGET: usize = 6144;
 /// Upper bound for a package archive.

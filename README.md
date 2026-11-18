@@ -55,19 +55,25 @@ The iOS shell, a GPU renderer, animations and bytecode compilation are on the
 
 ## Quick start
 
-```bash
-cargo build --release
-```
+Install a prebuilt `vard` ([releases](https://github.com/vardemin/vardui/releases)):
 
 ```bash
-./target/release/vard new myapp
+curl -fsSL https://raw.githubusercontent.com/vardemin/vardui/master/install.sh | sh
 ```
 
+```powershell
+irm https://raw.githubusercontent.com/vardemin/vardui/master/install.ps1 | iex
+```
+
+Or build it: `cargo build --release` (the binary is `target/release/vard`). Then:
+
 ```bash
-cd myapp && ../target/release/vard run && ../target/release/vard test
+vard new myapp && cd myapp && vard run && vard test
 ```
 
 For Claude Code / any MCP client: `vard new` creates `.mcp.json` with the `vard mcp` server
+(also listed in the official MCP Registry as `io.github.vardemin/vardui`, with a one-click
+`vard.mcpb` bundle on every release)
 (tools `vard_check`, `vard_run`, `vard_screenshot`, `vard_test`, `vard_doc`, `vard_explain`,
 `vard_search`, `vard_info`, `vard_add`, `vard_update`, `vard_api`, `vard_publish_check`,
 `vard_bindings`).
@@ -83,7 +89,8 @@ vard search bar chart       # search names, keywords, summaries and exported nam
 vard info charts            # versions, capabilities, API, tests — before installing
 vard add charts             # exact names only; vard.toml + vard.lock
 vard update --major         # API diff; then `vard check --fix` applies the package's migrations
-vard registry init ./reg && vard registry serve ./reg   # your own registry: static files + publish API
+# public registry (default): https://github.com/vardemin/vard-registry — publish = a pull request
+vard registry init ./reg && vard registry serve ./reg   # or your own: static files + publish API
 vard publish ./charts --registry ./reg --token …        # the gate: compile, tests, semver, capabilities
 ```
 
