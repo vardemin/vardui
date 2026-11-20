@@ -153,8 +153,10 @@ devices:
    video. *Done:* `crates/vard-gpu` — wgpu, one SDF pipeline (rounded boxes, borders,
    gradients, shadows, rounded clips), a glyph atlas from the core's fonts, images; parity
    with the headless rasterizer is a test; the Apple host draws with it on Metal, native
-   text fields float over Inputs ([Rendering](rendering.md)). Next: Android on Vulkan
-   through the same renderer, HarfBuzz-class shaping with system fonts.
+   text fields float over Inputs ([Rendering](rendering.md)). Every host now draws with
+   it: Android (`SurfaceView`, Vulkan/GLES, Canvas fallback), iOS/macOS (Metal), desktop
+   (`vard-desktop`: winit + DX12/Vulkan/GL/Metal) and the web (`vard-web`: WebAssembly +
+   WebGPU/WebGL2). Next: HarfBuzz-class shaping with system fonts.
 3. **Execution.** The AST interpreter is the dev engine (instant start, hot reload). For
    release — compilation to a compact register bytecode or AOT to Rust; type checks are
    already static, so runtime checks go away.

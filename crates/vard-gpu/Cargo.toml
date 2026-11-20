@@ -3,20 +3,24 @@ name = "vard-gpu"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GPU renderer for Vard frames (wgpu: Metal, Vulkan, DX12, GL) and the Apple host library"
+description = "GPU renderer for Vard frames (wgpu: Metal, Vulkan, DX12, GL, WebGPU)"
 
 [lib]
 name = "vard_gpu"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 vard-runtime = { path = "../vard-runtime" }
-vard-ffi = { path = "../vard-ffi" }
 wgpu = { version = "30", default-features = false, features = ["wgsl", "metal", "vulkan", "gles", "dx12", "std"] }
 pollster = "1"
 bytemuck = { version = "1", features = ["derive"] }
 fontdue = "0.9"
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "png-format"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# the web host: WebGPU where the browser has it, else WebGL2
+wgpu = { version = "30", default-features = false, features = ["wgsl", "webgpu", "webgl", "std"] }
+
 [dev-dependencies]
 vard-lang = { path = "../vard-lang" }
+vard-ffi = { path = "../vard-ffi" }

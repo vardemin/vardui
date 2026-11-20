@@ -21,6 +21,9 @@ public final class VardView: VardPlatformView {
     private var link: CADisplayLink?
     private var lastTimestamp: CFTimeInterval = 0
     private var inputs: [UInt32: PlatformTextField] = [:]
+    /// the text this host last sent per Input: a different value from the app (clear on
+    /// submit, formatting) replaces the field's text even while it is being edited
+    private var sent: [UInt32: String] = [:]
     private var lastFrame: VardFrame?
     private var lastDark: Bool?
     /// scroll inertia: (point, velocity in points per second)
@@ -390,7 +393,10 @@ public final class VardView: VardPlatformView {
     }
 
     private func style(_ f: UITextField, _ r: VardFrame.Record) {
-        if !f.isFirstResponder, f.text != r.text { f.text = r.text }
+        if f.text != r.text, !f.isFirstResponder || sent[r.uid] != r.text {
+            f.text = r.text
+            sent[r.uid] = r.text
+        }
         f.textColor = UIColor(cgColor: color(r.color, r.opacity))
         f.font = font(r) as? UIFont
         f.isSecureTextEntry = r.secure
@@ -403,6 +409,7 @@ public final class VardView: VardPlatformView {
     }
 
     @objc private func fieldChanged(_ f: UITextField) {
+        sent[UInt32(f.tag)] = f.text ?? ""
         engine.inputText(uid: UInt32(f.tag), f.text ?? "")
         requestFrame()
     }
@@ -426,6 +433,7 @@ public final class VardView: VardPlatformView {
         weak var view: VardView?
         func controlTextDidChange(_ n: Notification) {
             guard let f = n.object as? NSTextField, let v = view else { return }
+            v.sent[UInt32(f.tag)] = f.stringValue
             v.engine.inputText(uid: UInt32(f.tag), f.stringValue)
             v.requestFrame()
         }
@@ -482,7 +490,10 @@ public final class VardView: VardPlatformView {
             f = n
         }
         let editing = f.currentEditor() != nil
-        if !editing, f.stringValue != r.text { f.stringValue = r.text }
+        if f.stringValue != r.text, !editing || sent[r.uid] != r.text {
+            f.stringValue = r.text
+            sent[r.uid] = r.text
+        }
         f.textColor = NSColor(cgColor: color(r.color, r.opacity))
         f.font = font(r) as? NSFont
         f.isEnabled = !r.disabled

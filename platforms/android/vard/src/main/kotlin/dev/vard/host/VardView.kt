@@ -26,6 +26,8 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.inputmethod.EditorInfo
@@ -43,8 +45,13 @@ import kotlin.math.sin
 
 /**
  * Hosts one Vard app: the Rust core owns state, layout and hit-testing; this view draws the
- * frame's records on a Canvas, forwards touches, and overlays a real [EditText] on every
- * `Input` so the platform IME (composition, autocorrect, selection) works.
+ * frame, forwards touches, and overlays a real [EditText] on every `Input` so the platform
+ * IME (composition, autocorrect, selection) works.
+ *
+ * Drawing: with [gpu] (default) a [SurfaceView] behind the overlays is rendered by the
+ * core's GPU renderer (`crates/vard-gpu`, Vulkan or GLES) — the same pixels as `vard run
+ * --do shot`, text drawn and measured with the core's fonts. Without it, or on a device
+ * with no usable GPU API, the frame's records are drawn on a Canvas.
  *
  * The view fills the whole window (edge-to-edge); system bar and keyboard insets are passed
  * to the core with [setInsets] and the app decides where content goes (`safeArea`).
@@ -61,7 +68,12 @@ class VardView(
     val host: VardHost,
     private val fontFiles: List<String> = emptyList(),
     private val assetRoot: String = "app",
+    /** Draw with the GPU renderer (falls back to Canvas when the device has no GPU API). */
+    private val gpu: Boolean = true,
 ) : FrameLayout(context) {
+
+    private var gpuHandle = 0L
+    private val surface: SurfaceView? = if (gpu) SurfaceView(context) else null
 
     private var handle = 0L
     private var frame: Frame? = null
@@ -95,6 +107,31 @@ class VardView(
         isFocusableInTouchMode = true // lets taps outside an Input take focus from it
         host.onChanged = { refresh() }
         host.fonts = VardFonts(context, fontFiles)
+        surface?.let { sv ->
+            addView(sv, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            sv.holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {}
+
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
+                    if (gpuHandle == 0L) {
+                        gpuHandle = try {
+                            VardNative.gpuCreate(holder.surface, w, h, density)
+                        } catch (e: UnsatisfiedLinkError) {
+                            0L // libvard_ffi built with vard.gpu=false
+                        }
+                        if (gpuHandle == 0L) Log.w(TAG, "GPU renderer unavailable: drawing with Canvas")
+                    } else {
+                        VardNative.gpuResize(gpuHandle, w, h, density)
+                    }
+                    refresh()
+                }
+
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    if (gpuHandle != 0L) VardNative.gpuDestroy(gpuHandle)
+                    gpuHandle = 0L
+                }
+            })
+        }
     }
 
     private fun systemDark() =
@@ -115,7 +152,7 @@ class VardView(
             failure = "vard: could not create the runtime"
             return
         }
-        VardNative.setHost(handle, host, "android")
+        VardNative.setHost(handle, host, "android", platformText = !gpu)
         for (f in fontFiles) {
             try {
                 val bytes = context.assets.open(f).use { it.readBytes() }
@@ -200,6 +237,8 @@ class VardView(
     }
 
     fun destroy() {
+        if (gpuHandle != 0L) VardNative.gpuDestroy(gpuHandle)
+        gpuHandle = 0L
         inputs.values.forEach { removeView(it) }
         inputs.clear()
         host.handle = 0L
@@ -222,6 +261,7 @@ class VardView(
             syncInputs(f)
             if (f.animating) scheduleAnimationFrame()
         }
+        if (gpuHandle != 0L && failure == null) VardNative.gpuRender(gpuHandle, handle)
         invalidate()
     }
 
@@ -312,6 +352,7 @@ class VardView(
             drawFailure(canvas)
             return
         }
+        if (gpuHandle != 0L) return // the SurfaceView below shows the GPU frame
         canvas.drawColor(Frame.argb(f.background))
         val d = density
         for (r in f.records) {

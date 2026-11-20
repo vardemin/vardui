@@ -41,10 +41,10 @@
 //! with the same files the core measured, so wrapping matches; otherwise hosts re-measure
 //! each line for `center`/`end` alignment.
 
-use vard_runtime::layout::apply_xf;
-use vard_runtime::node::{Align, Kind, Rect};
-use vard_runtime::raster::rt_shadow;
-use vard_runtime::rt::{NodeKey, Runtime};
+use crate::layout::apply_xf;
+use crate::node::{Align, Kind, Rect};
+use crate::raster::rt_shadow;
+use crate::rt::{NodeKey, Runtime};
 
 pub const MAGIC: &[u8; 4] = b"VRDF";
 pub const VERSION: u16 = 2;

@@ -9,37 +9,34 @@
 //! instances that share an image.
 //!
 //! Hosts use it in two ways:
-//! * **Surface**: the C ABI ([`capi`]) renders into a `CAMetalLayer` (the Apple host in
-//!   `platforms/apple`): `vard_gpu_create_metal`, `vard_gpu_render` on each vsync.
+//! * **Surface**: [`Renderer::render`] into a surface texture. The C ABI / JNI wrappers
+//!   (`vard_gpu_*`, `VardNative.gpu*`) live in `vard-ffi` behind its `gpu` feature: Metal
+//!   layers (Apple), `ANativeWindow` (Android), and the desktop and web hosts use it directly.
 //! * **Offscreen**: [`screenshot`] renders a frame to PNG — used by tests to compare the
 //!   GPU output with the headless rasterizer.
 
-pub mod capi;
 pub mod renderer;
 pub mod scene;
 
 pub use renderer::{headless_device, render_offscreen, Renderer};
-use vard_ffi::{frame, App};
+use vard_runtime::{frame, Runtime};
 
-/// Render the app's current screen on the GPU at `scale` px per dp. RGBA8, row-major.
-/// `None` when no GPU adapter is available or nothing is mounted.
-pub fn render_rgba(r: &mut Renderer, app: &mut App, scale: f32) -> Option<(u32, u32, Vec<u8>)> {
-    let bytes = app.frame().to_vec();
-    if bytes.is_empty() {
-        return None;
-    }
+/// Render `rt`'s current screen on the GPU at `scale` px per dp. RGBA8, row-major.
+pub fn render_rgba(r: &mut Renderer, rt: &mut Runtime, scale: f32) -> Option<(u32, u32, Vec<u8>)> {
+    rt.settle();
+    let mut bytes = Vec::new();
+    frame::encode(rt, &mut bytes);
     let f = frame::decode(&bytes).ok()?;
-    let rt = app.runtime()?;
-    let (w, h) = ((rt.screen.0 * scale).round() as u32, (rt.screen.1 * scale).round() as u32);
-    let px = render_offscreen(r, &f, scale, &rt.text, rt.asset_dir.as_ref(), w.max(1), h.max(1));
-    Some((w.max(1), h.max(1), px))
+    let (w, h) = (((rt.screen.0 * scale).round() as u32).max(1), ((rt.screen.1 * scale).round() as u32).max(1));
+    let px = render_offscreen(r, &f, scale, &rt.text, rt.asset_dir.as_ref(), w, h);
+    Some((w, h, px))
 }
 
-/// PNG of the app's current screen drawn by the GPU renderer (`None`: no GPU adapter).
-pub fn screenshot(app: &mut App, scale: f32) -> Option<Vec<u8>> {
+/// PNG of `rt`'s current screen drawn by the GPU renderer (`None`: no GPU adapter).
+pub fn screenshot(rt: &mut Runtime, scale: f32) -> Option<Vec<u8>> {
     let (device, queue) = headless_device()?;
     let mut r = Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-    let (w, h, px) = render_rgba(&mut r, app, scale)?;
+    let (w, h, px) = render_rgba(&mut r, rt, scale)?;
     let pm = tiny_skia::Pixmap::from_vec(px, tiny_skia::IntSize::from_wh(w, h)?)?;
     pm.encode_png().ok()
 }

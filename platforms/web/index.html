@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Vard app</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #f1f5f9; font-family: system-ui, sans-serif; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #app { width: min(100vw, 430px); height: min(100vh, 900px); box-shadow: 0 10px 40px rgba(0,0,0,.15); }
+    @media (max-width: 500px) { #app { width: 100vw; height: 100vh; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { start } from "./vard.js";
+    const params = new URLSearchParams(location.search);
+    window.vard = await start(document.getElementById("app"), { view: params.get("view") });
+    console.info("vard: rendering with", window.vard.backend);
+  </script>
+</body>
+</html>

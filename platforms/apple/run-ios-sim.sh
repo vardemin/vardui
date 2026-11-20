@@ -3,9 +3,9 @@
 #   ./run-ios-sim.sh PROJECT_DIR [DEVICE_NAME]      e.g. ./run-ios-sim.sh ../../examples/todo "iPhone 15 Pro"
 # Needs VardFFI.xcframework with the ios-arm64-simulator slice (./build-xcframework.sh).
 set -eu
+PROJECT=$(cd "$1" && pwd)
 cd "$(dirname "$0")"
 ROOT=$(cd ../.. && pwd)
-PROJECT=$(cd "$1" && pwd)
 DEVICE=${2:-}
 OUT=.build/ios-sim
 APP="$OUT/VardDemo.app"
@@ -20,7 +20,7 @@ P=.build/xcode/Build/Products/Debug-iphonesimulator
 echo "== app binary"
 rm -rf "$APP" && mkdir -p "$APP"
 xcrun --sdk iphonesimulator swiftc -target "$TARGET" -sdk "$SDK" -I "$P" -I VardFFI.xcframework/ios-arm64-simulator/Headers -Onone \
-  Examples/iOSDemo/main.swift "$P/VardHost.o" VardFFI.xcframework/ios-arm64-simulator/libvard_gpu.a \
+  Examples/iOSDemo/main.swift "$P/VardHost.o" VardFFI.xcframework/ios-arm64-simulator/libvard_ffi.a \
   -framework UIKit -framework Metal -framework QuartzCore -framework Security -framework UserNotifications \
   -framework AVFoundation -framework Photos -framework Contacts -framework CoreLocation -lc++ \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/VardDemo"

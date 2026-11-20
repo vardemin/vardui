@@ -144,8 +144,11 @@ key for delivering updates without rebuilding the APK
 
 ## Limitations
 
-- Drawing with `Canvas`, a whole frame at a time; moving Android to the GPU renderer
-  (`crates/vard-gpu`, Vulkan through wgpu) and tree diffs are on the [roadmap](architecture.md#roadmap).
+- Drawing: by default the GPU renderer (`crates/vard-gpu`) on a `SurfaceView` — Vulkan,
+  GLES where Vulkan is missing — with text measured and drawn with the core's fonts. On a
+  device without a usable GPU API (or with `VardView(gpu = false)` / `vard.gpu=false`) the
+  frame is drawn with `Canvas` and text is measured by the platform shaper. Tree diffs are
+  on the [roadmap](architecture.md#roadmap).
 - Shadows through `Paint.setShadowLayer` (hardware-accelerated on API 28+).
 - Accessibility (TalkBack) is not yet connected to the semantic tree; scrolling has no inertia.
 - iOS and macOS have their own shell: [Apple shell](apple.md).

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Build VardFFI.xcframework: the Rust core + GPU renderer (crates/vard-gpu, a staticlib that
-# also carries every vard_* symbol of crates/vard-ffi) for macOS, iOS and the iOS simulator,
+# Build VardFFI.xcframework: crates/vard-ffi as a staticlib with the `gpu` feature (the core,
+# the C ABI and the wgpu renderer) for macOS, iOS and the iOS simulator,
 # with include/vard.h exposed to Swift as the `VardFFI` module.
 #
 #   ./build-xcframework.sh            release build of every slice
@@ -22,9 +22,9 @@ for t in $TARGETS; do
     echo "missing Rust target $t: rustup target add $t" >&2; exit 1
   fi
   echo "== cargo build $t"
-  (cd "$ROOT" && cargo build -p vard-gpu $FLAG --target "$t")
+  (cd "$ROOT" && cargo build -p vard-ffi --features gpu $FLAG --target "$t")
 done
-lib() { echo "$ROOT/target/$1/$PROFILE/libvard_gpu.a"; }
+lib() { echo "$ROOT/target/$1/$PROFILE/libvard_ffi.a"; }
 
 HEADERS=$(mktemp -d)
 cp "$ROOT/crates/vard-ffi/include/vard.h" "$HEADERS/"
@@ -40,8 +40,8 @@ ARGS=""
 MAC="$(lib aarch64-apple-darwin)"
 if [ -f "$(lib x86_64-apple-darwin)" ] && echo "$TARGETS" | grep -q x86_64; then
   mkdir -p "$ROOT/target/universal-macos/$PROFILE"
-  lipo -create "$(lib aarch64-apple-darwin)" "$(lib x86_64-apple-darwin)" -output "$ROOT/target/universal-macos/$PROFILE/libvard_gpu.a"
-  MAC="$ROOT/target/universal-macos/$PROFILE/libvard_gpu.a"
+  lipo -create "$(lib aarch64-apple-darwin)" "$(lib x86_64-apple-darwin)" -output "$ROOT/target/universal-macos/$PROFILE/libvard_ffi.a"
+  MAC="$ROOT/target/universal-macos/$PROFILE/libvard_ffi.a"
 fi
 ARGS="$ARGS -library $MAC -headers $HEADERS"
 for t in aarch64-apple-ios aarch64-apple-ios-sim; do

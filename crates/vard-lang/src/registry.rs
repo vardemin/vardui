@@ -244,7 +244,7 @@ pub const GLOBALS: &[(&str, &str, &str)] = &[
     ("isDark", "Bool", "the effective color scheme is dark"),
     ("screenWidth", "Float", "screen width in dp (responsive layouts: `screenWidth >= 600 ? 3 : 2`)"),
     ("screenHeight", "Float", "screen height in dp"),
-    ("platform", "String", "\"android\", \"ios\" or \"headless\""),
+    ("platform", "String", "\"android\", \"ios\", \"macos\", \"windows\", \"linux\", \"web\" or \"headless\""),
     ("locale", "String", "the user's language as a BCP 47 tag (\"en\", \"ru\", \"pt-BR\"); t() follows it"),
 ];
 

@@ -24,7 +24,7 @@ on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
   `safeArea.top/.bottom` reads them. Bottom includes the keyboard (`keyboardHeight`);
   the focused Input is scrolled above the keyboard automatically.
 - `setColorScheme(.dark|.light|.system)`, `isDark`, `screenWidth`, `screenHeight`,
-  `platform`, `openUrl(url)`, `shareText(text)`, `haptic(.success)`, `openAppSettings()`.
+  `platform` (`android ios macos windows linux web headless`), `openUrl(url)`, `shareText(text)`, `haptic(.success)`, `openAppSettings()`.
 
 ## Storage
 ```
@@ -111,6 +111,9 @@ parameters receives a JSON array of both: `resolve firestoreListNotes [[{"title"
    `engine.addDispatcher { n, json in places.call(n, json, host: engine) }`; or write a
    `VardModule` (`functions: ["searchPlaces": { c in ...; c.callback(1).resolve(...) }]`)
    and pass it to `VardViewController(modules: [...])`.
+6. Web (`platforms/web/vard.js`): `start(el, { modules: { searchPlaces: ([q, done], engine) =>
+   { api(q).then(r => engine.answer(done, r)); return null } } })`. Desktop
+   (`vard-desktop`): wrap `DesktopHost` in your own Rust `NativeHost`.
 - Native values cross as JSON and are decoded by the *declared* Vard type, so one native
   function can serve many app types (the firebase package's `firestoreGet*` works for any struct).
 - Ship it as a package so other apps get it with one command: put the Gradle library in

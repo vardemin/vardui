@@ -47,6 +47,8 @@ and printed by `vard doc` (sources in
 | [Rendering and animation](rendering.md) | the draw list, the GPU renderer, `animate:`/`enter:` and the frame clock |
 | [Android shell](android.md) | build, Gradle properties, native modules |
 | [Apple shell](apple.md) | iOS and macOS: Swift package, Metal view, modules |
+| [Desktop shell](desktop.md) | Windows, Linux, macOS: `vard-desktop`, live reload |
+| [Web shell](web.md) | WebAssembly + WebGPU/WebGL2, `vard.js` |
 | [ADRs](adr/) | architecture decision records 0001–0007 |
 
 ## Developing the framework

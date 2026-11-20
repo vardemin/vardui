@@ -19,7 +19,9 @@
 //! `vard run --do layout` agree on every rectangle. Two surfaces expose the same calls:
 //! a C ABI (`vard_*`, for Swift/C/C++) and JNI (`dev.vard.host.VardNative`, see [`jni_api`]).
 
-pub mod frame;
+pub use vard_runtime::frame;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub mod inspect;
 mod jni_api;
 
@@ -73,6 +75,10 @@ impl App {
 
     pub fn runtime(&self) -> Option<&Runtime> {
         self.rt.as_ref()
+    }
+
+    pub fn runtime_mut(&mut self) -> Option<&mut Runtime> {
+        self.rt.as_mut()
     }
 
     /// Folder that `Image("assets/...")` paths are relative to (renderers in Rust load from it).

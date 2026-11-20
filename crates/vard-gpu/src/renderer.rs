@@ -3,7 +3,7 @@
 use crate::scene::{self, Atlas, Images, Inst, Scene};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use vard_ffi::frame::Frame;
+use vard_runtime::frame::Frame;
 use vard_runtime::text::TextEngine;
 
 const ATLAS: u32 = 2048;
@@ -74,8 +74,8 @@ pub struct Renderer {
     images: HashMap<String, Option<Image>>,
     /// instances drawn by the last `draw` (for tests and stats)
     pub last_instances: usize,
-    /// the host overlays native text fields: do not draw Input text
-    pub native_inputs: bool,
+    /// how Inputs are shown (native overlays, or drawn here with a caret)
+    pub inputs: scene::Options,
 }
 
 impl Renderer {
@@ -190,14 +190,28 @@ impl Renderer {
             atlas: Atlas::new(ATLAS),
             images: HashMap::new(),
             last_instances: 0,
-            native_inputs: false,
+            inputs: Default::default(),
         }
+    }
+
+    /// Provide image `src` from encoded PNG bytes (hosts without a file system, `https://`
+    /// images fetched by the host). Returns false when the bytes are not a PNG.
+    pub fn add_image(&mut self, src: &str, png: &[u8]) -> bool {
+        let img = tiny_skia::Pixmap::decode_png(png).ok().map(|pm| upload_rgba(&self.device, &self.queue, pm.width(), pm.height(), pm.data(), "vard image"));
+        let ok = img.is_some();
+        self.images.insert(src.to_string(), img);
+        ok
+    }
+
+    /// Whether `src` was loaded (or attempted).
+    pub fn has_image(&self, src: &str) -> bool {
+        self.images.contains_key(src)
     }
 
     /// Build the scene for `frame` (CPU) and upload what changed.
     pub fn prepare(&mut self, frame: &Frame, scale: f32, text: &TextEngine, asset_dir: Option<&PathBuf>) -> Scene {
         let mut store = ImageStore { device: &self.device, queue: &self.queue, dir: asset_dir, cache: &mut self.images };
-        let scene = scene::build(frame, scale, text, &mut self.atlas, &mut store, self.native_inputs);
+        let scene = scene::build(frame, scale, text, &mut self.atlas, &mut store, self.inputs);
         if self.atlas.dirty {
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo { texture: &self.atlas_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },

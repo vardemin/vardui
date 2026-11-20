@@ -51,9 +51,17 @@ $ vard run --do 'tap "Tap me"'
 | Animation | `animate: .spring` on changing props, `enter: .slideUp` on appearing elements, `wait MS` in tests | `Choreographer` drives the frame clock | `CADisplayLink` drives the frame clock |
 | Native SDKs | `extern fn` / `extern event`, data = structs/enums/lists/maps | `vard bindings --kotlin` → typed base class; module libraries register themselves (`dev.vard.module.*`) | `vard bindings --swift` → protocol + dispatcher; `VardModule` |
 
-Hosts: [Android](https://vardemin.github.io/vardui/android.html) (Kotlin, Canvas) and
-[iOS/macOS](https://vardemin.github.io/vardui/apple.html) (Swift, the wgpu GPU renderer on
-Metal). Bytecode compilation and accessibility mapping are on the
+Every host draws with the same GPU renderer (`crates/vard-gpu`, wgpu), pixel-matched to the
+headless screenshots:
+
+| Host | Shell | GPU API | Run it |
+|---|---|---|---|
+| [Android](https://vardemin.github.io/vardui/android.html) | Kotlin `VardActivity`, `SurfaceView` (Canvas fallback) | Vulkan, GLES | `platforms/android`: `./gradlew :app:installDebug` |
+| [iOS, macOS](https://vardemin.github.io/vardui/apple.html) | Swift package `VardHost`, `CAMetalLayer` | Metal | `platforms/apple/run-ios-sim.sh examples/todo "iPhone 15 Pro"` |
+| [Windows, Linux, macOS](https://vardemin.github.io/vardui/desktop.html) | `vard-desktop` (winit), live reload | DX12, Vulkan, GL, Metal | `cargo run -p vard-desktop -- examples/todo` |
+| [Web](https://vardemin.github.io/vardui/web.html) | WebAssembly + `vard.js` | WebGPU, WebGL2 | `platforms/web/build.sh examples/todo` |
+
+Bytecode compilation and accessibility mapping are on the
 [roadmap](https://vardemin.github.io/vardui/architecture.html#roadmap).
 
 ## Quick start

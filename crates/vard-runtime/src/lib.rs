@@ -7,6 +7,7 @@
 pub mod actions;
 pub mod anim;
 mod eval;
+pub mod frame;
 pub mod inspect;
 pub mod json;
 pub mod layout;

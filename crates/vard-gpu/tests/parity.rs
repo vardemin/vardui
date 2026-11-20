@@ -52,11 +52,11 @@ fn gpu_matches_rasterizer() {
     app.set_asset_dir(dir.to_str().unwrap());
     app.mount(None).unwrap();
 
+    let rt = app.runtime_mut().unwrap();
     let mut r = vard_gpu::Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-    let (w, h, gpu) = vard_gpu::render_rgba(&mut r, &mut app, 2.0).unwrap();
+    let (w, h, gpu) = vard_gpu::render_rgba(&mut r, rt, 2.0).unwrap();
     assert!(r.last_instances > 50, "only {} instances", r.last_instances);
-    let rt = app.runtime().unwrap() as *const vard_runtime::Runtime as *mut vard_runtime::Runtime;
-    let png = unsafe { (*rt).render_png(2.0) }.unwrap();
+    let png = rt.render_png(2.0).unwrap();
     let (cw, ch, cpu) = png_rgba(&png);
     assert_eq!((w, h), (cw, ch));
 

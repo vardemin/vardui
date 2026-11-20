@@ -32,6 +32,8 @@
 - [Rendering and animation](rendering.md)
 - [Android shell](android.md)
 - [Apple shell (iOS, macOS)](apple.md)
+- [Desktop shell (Windows, Linux, macOS)](desktop.md)
+- [Web shell](web.md)
 - [Architecture decision records](adr/README.md)
   - [0001 Own language](adr/0001-own-language.md)
   - [0002 Fine-grained reactivity](adr/0002-fine-grained-reactivity.md)

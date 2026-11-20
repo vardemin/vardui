@@ -1,5 +1,6 @@
-//! C ABI for hosts that hand the renderer a native surface (declared in
-//! `crates/vard-ffi/include/vard.h`). Today: `CAMetalLayer` on iOS and macOS.
+//! The GPU renderer (`vard-gpu`) bound to a native surface (feature `gpu`): the C ABI
+//! declared in `include/vard.h` (`CAMetalLayer` on iOS/macOS) and the JNI entry points
+//! `VardNative.gpu*` (an Android `Surface`, Vulkan or GLES).
 //!
 //! ```c
 //! VardGpu *gpu = vard_gpu_create_metal((__bridge void *)layer, w_px, h_px, scale);
@@ -8,9 +9,9 @@
 //! bool more = vard_gpu_render(gpu, app);
 //! ```
 
-use crate::renderer::Renderer;
+use vard_gpu::Renderer;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use vard_ffi::{frame, App};
+use crate::{frame, App};
 
 /// A renderer bound to a presentable surface.
 pub struct VardGpu {
@@ -64,7 +65,7 @@ impl VardGpu {
         };
         surface.configure(&device, &config);
         let mut renderer = Renderer::new(device, queue, format);
-        renderer.native_inputs = true;
+        renderer.inputs.native_inputs = true;
         Ok(VardGpu { surface, _instance: instance, config, renderer, scale })
     }
 
@@ -146,5 +147,74 @@ pub unsafe extern "C" fn vard_gpu_render(gpu: *mut VardGpu, app: *mut App) -> bo
 pub unsafe extern "C" fn vard_gpu_destroy(gpu: *mut VardGpu) {
     if !gpu.is_null() {
         drop(Box::from_raw(gpu));
+    }
+}
+
+// ---------------- Android (JNI) ----------------
+
+#[cfg(target_os = "android")]
+mod android {
+    use super::VardGpu;
+    use jni::objects::{JClass, JObject};
+    use jni::sys::{jboolean, jfloat, jint, jlong};
+    use jni::JNIEnv;
+    use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
+    use std::ptr::NonNull;
+
+    /// The renderer plus the `ANativeWindow` reference it draws into.
+    struct AndroidGpu {
+        gpu: VardGpu,
+        window: NonNull<ndk_sys::ANativeWindow>,
+    }
+
+    impl Drop for AndroidGpu {
+        fn drop(&mut self) {
+            unsafe { ndk_sys::ANativeWindow_release(self.window.as_ptr()) }
+        }
+    }
+
+    /// `VardNative.gpuCreate(surface, widthPx, heightPx, scale)`: 0 when no Vulkan/GLES device.
+    #[no_mangle]
+    pub extern "system" fn Java_dev_vard_host_VardNative_gpuCreate(env: JNIEnv, _: JClass, surface: JObject, w: jint, h: jint, scale: jfloat) -> jlong {
+        super::guard(0, || unsafe {
+            let raw = ndk_sys::ANativeWindow_fromSurface(env.get_raw() as *mut _, surface.as_raw() as *mut _);
+            let Some(window) = NonNull::new(raw) else { return 0 };
+            let target = wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: Some(RawDisplayHandle::Android(AndroidDisplayHandle::new())),
+                raw_window_handle: RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(window.cast())),
+            };
+            match VardGpu::new(target, w.max(1) as u32, h.max(1) as u32, scale) {
+                Ok(gpu) => Box::into_raw(Box::new(AndroidGpu { gpu, window })) as jlong,
+                Err(_) => {
+                    ndk_sys::ANativeWindow_release(raw);
+                    0
+                }
+            }
+        })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_dev_vard_host_VardNative_gpuResize(_: JNIEnv, _: JClass, g: jlong, w: jint, h: jint, scale: jfloat) {
+        super::guard((), || {
+            if let Some(g) = unsafe { (g as *mut AndroidGpu).as_mut() } {
+                g.gpu.resize(w.max(1) as u32, h.max(1) as u32, scale)
+            }
+        })
+    }
+
+    /// Draw the app's frame; true while animations run.
+    #[no_mangle]
+    pub extern "system" fn Java_dev_vard_host_VardNative_gpuRender(_: JNIEnv, _: JClass, g: jlong, app: jlong) -> jboolean {
+        super::guard(0, || match unsafe { ((g as *mut AndroidGpu).as_mut(), (app as *mut crate::App).as_mut()) } {
+            (Some(g), Some(a)) => g.gpu.render(a) as jboolean,
+            _ => 0,
+        })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_dev_vard_host_VardNative_gpuDestroy(_: JNIEnv, _: JClass, g: jlong) {
+        if g != 0 {
+            drop(unsafe { Box::from_raw(g as *mut AndroidGpu) });
+        }
     }
 }

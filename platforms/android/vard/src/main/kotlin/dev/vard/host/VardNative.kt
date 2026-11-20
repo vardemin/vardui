@@ -14,8 +14,12 @@ object VardNative {
     /** Compile [paths]/[texts] (parallel arrays) for a [width]×[height] dp screen. */
     @JvmStatic external fun create(paths: Array<String>, texts: Array<String>, width: Float, height: Float): Long
     @JvmStatic external fun destroy(handle: Long)
-    /** Install the native-module dispatcher (before [mount]); [host] implements `call`. */
-    @JvmStatic external fun setHost(handle: Long, host: VardHost, platform: String)
+    /**
+     * Install the native-module dispatcher (before [mount]); [host] implements `call`.
+     * [platformText]: measure text with Android's shaper (Canvas drawing). The GPU renderer
+     * draws with the core's fonts, so it passes false and the core measures with them.
+     */
+    @JvmStatic external fun setHost(handle: Long, host: VardHost, platform: String, platformText: Boolean)
     /** Register a project font (`Inter-SemiBold.ttf`); the core measures text with it. */
     @JvmStatic external fun addFont(handle: Long, fileName: String, bytes: ByteArray): Int
     /** Mount [view] (null = `App`, else the last view in user code). 0 ok, -1 see [diagnostics]. */
@@ -49,6 +53,16 @@ object VardNative {
     /** The laid-out screen; layout documented in crates/vard-ffi/src/frame.rs. */
     @JvmStatic external fun frame(handle: Long): ByteArray
     @JvmStatic external fun diagnostics(handle: Long): String
+
+    /**
+     * GPU renderer (`crates/vard-gpu`, Vulkan or GLES) on a [android.view.Surface] of
+     * [widthPx]×[heightPx]; [scale] = px per dp. 0 when the device has no usable GPU API.
+     */
+    @JvmStatic external fun gpuCreate(surface: android.view.Surface, widthPx: Int, heightPx: Int, scale: Float): Long
+    @JvmStatic external fun gpuResize(gpu: Long, widthPx: Int, heightPx: Int, scale: Float)
+    /** Draw the app's current frame; true while animations run. */
+    @JvmStatic external fun gpuRender(gpu: Long, handle: Long): Boolean
+    @JvmStatic external fun gpuDestroy(gpu: Long)
 
     /** Debug builds: accept `vard run --device` scripts on [addr]; 0 = listening. */
     @JvmStatic external fun inspectListen(handle: Long, addr: String): Int

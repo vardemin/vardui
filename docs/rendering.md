@@ -11,8 +11,8 @@ text lines as the core wrapped them, inputs and images. Three painters draw that
 | Painter | Where | Used for |
 |---|---|---|
 | tiny-skia rasterizer (`vard_runtime::raster`) | headless | `shot`, `vard_screenshot`, golden images |
-| `vard-gpu` (wgpu) | Apple hosts (Metal); any wgpu backend | devices; offscreen screenshots in tests |
-| Android Canvas (`VardView.kt`) | Android | devices (until the GPU renderer is wired to Vulkan) |
+| `vard-gpu` (wgpu) | Android (Vulkan, GLES), iOS/macOS (Metal), desktop (DX12, Vulkan, GL, Metal), web (WebGPU, WebGL2) | devices; offscreen screenshots in tests |
+| Android Canvas (`VardView.kt`) | Android | the fallback when the device has no usable GPU API, or `VardView(gpu = false)` |
 
 ## The GPU renderer (`crates/vard-gpu`)
 
@@ -35,8 +35,14 @@ sRGB-encoded space, like the rasterizer and the platform canvases, so colors mat
 `crates/vard-gpu/tests/parity.rs` renders a screen with every feature on the GPU and with
 tiny-skia and requires a mean channel difference under 1.5/255 (it is about 0.1).
 
-On devices the host overlays native text fields over `Input`s (IME, selection), so the GPU
-renderer leaves Input text to them (`Renderer::native_inputs`).
+Mobile and web hosts float native text fields over `Input`s (IME, selection, autofill), so
+the renderer leaves Input text to them (`Options::native_inputs`). The desktop host edits
+text itself: the renderer then draws the text and a caret in the focused Input
+(`Options::focused`, `Options::caret`).
+
+Text is drawn with the core's fonts on every GPU host, and the core measures with the same
+fonts, so line breaks on a device match `vard run`. Project fonts (`fonts/`) are used when
+present, otherwise the bundled DejaVu.
 
 ## Animation
 

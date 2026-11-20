@@ -6,7 +6,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
-use vard_ffi::frame::{Frame, Record, F_BACKGROUND, F_ITALIC, F_SECURE, F_STRIKE, F_UNDERLINE};
+use vard_runtime::frame::{Frame, Record, F_BACKGROUND, F_ITALIC, F_SECURE, F_STRIKE, F_UNDERLINE};
 use vard_runtime::node::Rect;
 use vard_runtime::raster::gradient_line;
 use vard_runtime::text::TextEngine;
@@ -124,6 +124,17 @@ pub trait Images {
     fn size(&mut self, src: &str) -> Option<(u32, u32)>;
 }
 
+/// How the host shows text input.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Options {
+    /// platform text fields float over Inputs (mobile): do not draw Input text
+    pub native_inputs: bool,
+    /// uid of the Input with keyboard focus (0 = none)
+    pub focused: u32,
+    /// draw the text caret in the focused Input (blinking is the host's: toggle and redraw)
+    pub caret: bool,
+}
+
 pub struct Scene {
     pub insts: Vec<Inst>,
     pub batches: Vec<Batch>,
@@ -139,6 +150,8 @@ struct Builder<'a> {
     atlas: &'a mut Atlas,
     text: &'a TextEngine,
     native_inputs: bool,
+    focused: u32,
+    caret: bool,
 }
 
 impl Builder<'_> {
@@ -323,7 +336,12 @@ impl Builder<'_> {
                 let saved = self.clip;
                 let s = self.s;
                 self.clip = [saved[0].max(r.x * s), saved[1].max(r.y * s), saved[2].min((r.x + r.w) * s), saved[3].min((r.y + r.h) * s)];
-                self.text(&shown, r.x + pl, y, line_h, px, face, spacing, italic, c, rec.opacity);
+                let end = self.text(&shown, r.x + pl, y, line_h, px, face, spacing, italic, c, rec.opacity);
+                if rec.uid == self.focused && self.caret {
+                    // hosts that edit text themselves (desktop, web) show where typing goes
+                    let at = if empty { r.x + pl } else { end };
+                    self.fill(Rect { x: at, y: y + line_h * 0.15, w: (1.5f32).max(1.0 / self.s), h: line_h * 0.7 }, [0.0; 4], rec.color, rec.opacity);
+                }
                 self.clip = saved;
             }
             _ => {}
@@ -332,22 +350,20 @@ impl Builder<'_> {
 
     /// One line with its top-left at (x, y) dp, exactly like the rasterizer.
     #[allow(clippy::too_many_arguments)]
-    fn text(&mut self, s: &str, x: f32, y: f32, line_h: f32, px: f32, face: usize, spacing: f32, italic: bool, color: u32, alpha: f32) {
+    /// Returns the pen position after the last glyph, in dp.
+    fn text(&mut self, s: &str, x: f32, y: f32, line_h: f32, px: f32, face: usize, spacing: f32, italic: bool, color: u32, alpha: f32) -> f32 {
         let k = self.s;
         let dpx = px * k;
         let font = self.text.font(face);
-        let Some(lm) = font.horizontal_line_metrics(dpx) else { return };
+        let Some(lm) = font.horizontal_line_metrics(dpx) else { return x };
         let synth_italic = italic && !self.text.faces.get(face).is_some_and(|f| f.italic);
         let shear = if synth_italic { 0.2 } else { 0.0 };
         let baseline = y * k + (line_h * k - (lm.ascent - lm.descent)) / 2.0 + lm.ascent;
         let col = rgba(color, alpha);
-        if col[3] <= 0.0 {
-            return;
-        }
         let mut pen = x * k;
         for ch in s.chars() {
             let Some(g) = self.atlas.glyph(self.text, ch, face, dpx) else { continue };
-            if g.w > 0 && g.h > 0 {
+            if g.w > 0 && g.h > 0 && col[3] > 0.0 {
                 let gx = (pen + g.xmin as f32).round();
                 let gy = (baseline - (g.ymin as f32 + g.h as f32)).round();
                 let lean = if shear > 0.0 { ((baseline - gy) * shear).round().max(0.0) + 1.0 } else { 0.0 };
@@ -366,16 +382,17 @@ impl Builder<'_> {
             }
             pen += g.advance + spacing * k;
         }
+        pen / k
     }
 }
 
 /// Build the instances for `frame` at `scale` device pixels per dp. With `native_inputs`
 /// the host overlays platform text fields (IME, selection) and Input text is not drawn.
-pub fn build(frame: &Frame, scale: f32, text: &TextEngine, atlas: &mut Atlas, images: &mut dyn Images, native_inputs: bool) -> Scene {
+pub fn build(frame: &Frame, scale: f32, text: &TextEngine, atlas: &mut Atlas, images: &mut dyn Images, opts: Options) -> Scene {
     if atlas.full {
         atlas.clear();
     }
-    let mut b = Builder { s: scale, out: Vec::with_capacity(frame.records.len() * 4), batches: Vec::new(), clip: [0.0; 4], clip_radii: [0.0; 4], atlas, text, native_inputs };
+    let mut b = Builder { s: scale, out: Vec::with_capacity(frame.records.len() * 4), batches: Vec::new(), clip: [0.0; 4], clip_radii: [0.0; 4], atlas, text, native_inputs: opts.native_inputs, focused: opts.focused, caret: opts.caret };
     for rec in &frame.records {
         b.record(rec, images);
     }
