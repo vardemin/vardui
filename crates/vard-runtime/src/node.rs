@@ -183,6 +183,14 @@ pub struct Node {
     pub xf: (f32, f32, f32),
     pub content_h: f32,
     pub scroll_y: f32,
+    // animation
+    /// index into the Animation enum (0 = none)
+    pub animate: u8,
+    pub duration: Option<f32>,
+    /// index into the Transition enum (0 = none)
+    pub enter: u8,
+    /// laid out at least once: later prop changes may animate, `enter` has run
+    pub shown: bool,
 }
 
 /// Props that cannot change geometry (handlers, semantics, paint-only).
@@ -193,6 +201,7 @@ pub fn affects_layout(prop: &str) -> bool {
             | "opacity" | "strike" | "radius" | "secure" | "value" | "placeholder" | "textAlign" | "gradient" | "gradientAngle"
             | "radiusTopLeft" | "radiusTopRight" | "radiusBottomLeft" | "radiusBottomRight" | "shadow" | "shadowColor" | "clip"
             | "underline" | "placeholderColor" | "keyboard" | "fit" | "tint" | "borderTop" | "borderBottom" | "borderLeft" | "borderRight"
+            | "animate" | "duration" | "enter"
     )
 }
 
@@ -277,6 +286,10 @@ impl Node {
             xf: (1.0, 0.0, 0.0),
             content_h: 0.0,
             scroll_y: 0.0,
+            animate: 0,
+            duration: None,
+            enter: 0,
+            shown: false,
         };
         match kind {
             Kind::Spacer => n.grow = 1.0,
@@ -466,6 +479,9 @@ impl Node {
             "onTap" => self.on_tap = func(),
             "onSubmit" => self.on_submit = func(),
             "onChange" => self.on_change = func(),
+            "animate" => self.animate = enum_variants("Animation").and_then(|vs| vs.iter().position(|x| *x == en)).unwrap_or(0) as u8,
+            "duration" => self.duration = f.filter(|d| *d >= 0.0),
+            "enter" => self.enter = enum_variants("Transition").and_then(|vs| vs.iter().position(|x| *x == en)).unwrap_or(0) as u8,
             _ => return false,
         }
         true

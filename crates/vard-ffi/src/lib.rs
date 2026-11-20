@@ -75,6 +75,13 @@ impl App {
         self.rt.as_ref()
     }
 
+    /// Folder that `Image("assets/...")` paths are relative to (renderers in Rust load from it).
+    pub fn set_asset_dir(&mut self, dir: &str) {
+        if let Some(rt) = self.rt.as_mut() {
+            rt.asset_dir = Some(std::path::PathBuf::from(dir));
+        }
+    }
+
     /// Mount `view` (default: `App`, else the last view in user code) as the root.
     pub fn mount(&mut self, view: Option<&str>) -> Result<(), String> {
         let rt = self.rt.as_mut().ok_or("the project has compile errors; see diagnostics")?;
@@ -293,6 +300,21 @@ impl App {
         }
     }
 
+    /// Advance the animation clock by `dt_ms` (the time since the previous display frame).
+    /// Returns whether animations are still running — keep requesting frames while true.
+    pub fn advance(&mut self, dt_ms: f32) -> bool {
+        match self.rt.as_mut().filter(|_| self.mounted) {
+            // a stalled frame (app in background) must not jump into the middle of nowhere
+            Some(rt) => rt.advance(dt_ms.clamp(0.0, 100.0) as f64),
+            None => false,
+        }
+    }
+
+    /// Whether animations are running (also bit 2 of the frame header).
+    pub fn animating(&self) -> bool {
+        self.rt.as_ref().is_some_and(|rt| rt.animating())
+    }
+
     /// Encode the current screen (see [`frame`]). Empty when not mounted.
     pub fn frame(&mut self) -> &[u8] {
         self.frame.clear();
@@ -497,6 +519,83 @@ pub unsafe extern "C" fn vard_resize(app: *mut App, width: f32, height: f32) {
             a.resize(width, height)
         }
     })
+}
+
+/// Input `uid` has keyboard focus (0 = none); the core keeps it above the keyboard.
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_focus(app: *mut App, uid: u32) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.focus(uid)
+        }
+    })
+}
+
+/// Register a project font file (`Inter-SemiBold.ttf`); the core measures and draws with it.
+/// 0 on success, -1 on a bad font.
+///
+/// # Safety
+/// `app` from [`vard_create`]; `file_name` NUL-terminated; `bytes` points to `len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn vard_add_font(app: *mut App, file_name: *const c_char, bytes: *const u8, len: usize) -> i32 {
+    guard(-1, || {
+        let (Some(a), Some(name)) = (self::app(app), cstr(file_name)) else { return -1 };
+        if bytes.is_null() {
+            return -1;
+        }
+        match a.add_font(name, std::slice::from_raw_parts(bytes, len)) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    })
+}
+
+/// Folder that `Image("assets/...")` sources are relative to (for the Rust GPU renderer).
+///
+/// # Safety
+/// `app` from [`vard_create`]; `dir` NUL-terminated UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn vard_set_asset_dir(app: *mut App, dir: *const c_char) {
+    guard((), || {
+        if let (Some(a), Some(d)) = (self::app(app), cstr(dir)) {
+            a.set_asset_dir(d)
+        }
+    })
+}
+
+/// Drop a kept callback (a listener the native side will never call again).
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_release(app: *mut App, id: u64) {
+    guard((), || {
+        if let Some(a) = self::app(app) {
+            a.release_callback(id)
+        }
+    })
+}
+
+/// Does an enabled `on back` handler take the next back gesture?
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_back_enabled(app: *mut App) -> bool {
+    guard(false, || self::app(app).is_some_and(|a| a.back_enabled()))
+}
+
+/// Advance animations by `dt_ms` since the previous display frame; true while animations
+/// run (then draw a new `vard_frame` and call again on the next vsync).
+///
+/// # Safety
+/// `app` from [`vard_create`].
+#[no_mangle]
+pub unsafe extern "C" fn vard_advance(app: *mut App, dt_ms: f32) -> bool {
+    guard(false, || self::app(app).is_some_and(|a| a.advance(dt_ms)))
 }
 
 /// Encode the current frame. The buffer is owned by `app` and valid until the next call

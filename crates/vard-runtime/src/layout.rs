@@ -35,6 +35,7 @@ impl Runtime {
         }
         self.layout_dirty = false;
         self.stats.layouts += 1;
+        self.start_enter();
         let s = self.safe_insets();
         for (_, n) in self.nodes.iter_mut() {
             n.safe_pad = if n.safe == 0 {

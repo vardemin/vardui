@@ -8,7 +8,7 @@ between Vard and native code:
   `on name(params) [if cond] { ... }`, is active while the view is on screen.
 
 The standard platform is declared in Vard itself (`vard doc std`); every function is
-implemented by the headless simulator and by the Android host (iOS is on the roadmap). The
+implemented by the headless simulator, the Android host and the Apple host (iOS/macOS). The
 reference for agents is `vard doc native`.
 
 ## Lifecycle and system

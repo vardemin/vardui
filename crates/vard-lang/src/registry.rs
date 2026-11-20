@@ -97,6 +97,9 @@ pub const COMMON: &[PropDef] = &[
     p("offsetY", PTy::Float, ""),
     p("scale", PTy::Float, "visual scale around the center after layout (1 = normal)"),
     p("clip", PTy::Bool, "clip children to this element's bounds (rounded by `radius`)"),
+    p("animate", PTy::Enum("Animation"), "animate changes of opacity, offsetX/Y, scale, colors, radius, width/height: .spring .easeOut .easeInOut .linear .bouncy"),
+    p("duration", PTy::Int, "animation length in ms for `animate:`/`enter:` (default 250, spring 400)"),
+    p("enter", PTy::Enum("Transition"), "animate the element in when it appears: .fade .slideUp .slideDown .slideLeft .slideRight .scale .pop"),
     p("alignSelf", PTy::Enum("Align"), "override the parent's `align` for this element"),
     p("onTap", PTy::Fn0, "tap handler; makes the element interactive"),
     p("id", PTy::Str, "stable id for tests and inspection (`#id` selector)"),
@@ -202,6 +205,8 @@ pub const ENUMS: &[(&str, &[&str])] = &[
     ("Shadow", &["none", "sm", "md", "lg", "xl", "xxl"]),
     ("SafeArea", &["none", "all", "top", "bottom", "horizontal", "vertical"]),
     ("Keyboard", &["text", "email", "number", "phone", "url"]),
+    ("Animation", &["none", "spring", "bouncy", "easeOut", "easeInOut", "easeIn", "linear"]),
+    ("Transition", &["none", "fade", "slideUp", "slideDown", "slideLeft", "slideRight", "scale", "pop"]),
 ];
 
 /// CSS-style numeric weight of a `Weight` variant.
@@ -408,6 +413,12 @@ pub const PROP_ALIASES: &[(&str, &str)] = &[
     ("borderBottomWidth", "borderBottom"),
     ("borderLeftWidth", "borderLeft"),
     ("borderRightWidth", "borderRight"),
+    ("transition", "animate"),
+    ("animation", "animate"),
+    ("animateContentSize", "animate"),
+    ("transitionDuration", "duration"),
+    ("animationDuration", "duration"),
+    ("entering", "enter"),
 ];
 
 /// Handler names from other frameworks -> Vard event names (`on appear { }`).

@@ -220,8 +220,27 @@ class VardView(
             (parent as? View)?.setBackgroundColor(Frame.argb(f.background))
             onFrame?.invoke(f.dark, f.backEnabled)
             syncInputs(f)
+            if (f.animating) scheduleAnimationFrame()
         }
         invalidate()
+    }
+
+    private var lastVsync = 0L
+    private var frameScheduled = false
+
+    /** Drive `animate:`/`enter:` from vsync: advance the core's clock and pull a frame. */
+    private fun scheduleAnimationFrame() {
+        if (frameScheduled) return
+        frameScheduled = true
+        android.view.Choreographer.getInstance().postFrameCallback { now ->
+            frameScheduled = false
+            if (handle == 0L) return@postFrameCallback
+            val dt = if (lastVsync == 0L) 16.7f else (now - lastVsync) / 1_000_000f
+            lastVsync = now
+            VardNative.advance(handle, dt)
+            refresh()
+            if (frame?.animating != true) lastVsync = 0L
+        }
     }
 
     private fun logDiagnostics() {

@@ -163,7 +163,11 @@ impl Runtime {
     }
 
     pub fn tree_text(&self) -> String {
-        let mut s = format!("screen {}x{} {}\n", fmt(self.screen.0), fmt(self.screen.1), if self.is_dark() { "dark" } else { "light" });
+        let mut s = format!("screen {}x{} {}", fmt(self.screen.0), fmt(self.screen.1), if self.is_dark() { "dark" } else { "light" });
+        if self.animating() {
+            s.push_str(&format!(" animating ({}ms left; `wait` finishes)", self.animation_remaining().ceil()));
+        }
+        s.push('\n');
         for n in self.semantic_nodes() {
             s.push_str(&"  ".repeat(n.depth));
             s.push_str(&n.line);
@@ -228,6 +232,19 @@ impl Runtime {
         }
         if n.kind == Kind::Scroll {
             s.push_str(&format!(" scroll={}/{}", fmt(n.scroll_y), fmt((n.content_h - n.rect.h).max(0.0))));
+        }
+        if n.opacity != 1.0 {
+            s.push_str(&format!(" opacity={:.2}", n.opacity));
+        }
+        if n.offset != (0.0, 0.0) {
+            s.push_str(&format!(" offset={},{}", fmt(n.offset.0), fmt(n.offset.1)));
+        }
+        if n.scale != 1.0 {
+            s.push_str(&format!(" scale={:.2}", n.scale));
+        }
+        if self.tweens.iter().any(|t| self.nodes.get(t.node).is_some_and(|m| m.uid == n.uid)) {
+            let props: Vec<&str> = self.tweens.iter().filter(|t| self.nodes.get(t.node).is_some_and(|m| m.uid == n.uid)).map(|t| t.prop).collect();
+            s.push_str(&format!(" ~animating {}", props.join(",")));
         }
         s
     }

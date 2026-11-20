@@ -73,6 +73,14 @@ on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
 if (stack.last ?? .list) == .list { ListScreen(onOpen: { stack.append(.detail) }) } else { Detail() }
 ```
 
+Animation: `animate:` interpolates prop changes, `enter:` plays when the element appears;
+test with `wait 100` (partial) or `wait` (to the end), then `layout`/`expect`:
+```
+Column(id: "panel", height: open ? 120 : 48, background: open ? .primary : .surface, radius: 12,
+       opacity: open ? 1 : 0.6, animate: .spring) { Text("Panel", padding: 12) }
+if open { Text("Details", id: "details", enter: .slideUp, duration: 200) }
+```
+
 ## Layout rules (CSS-flex semantics)
 - Column/Row: children stretch on the cross axis by default (`align: .stretch`).
 - `grow: 1` takes the remaining main-axis space (use on the flexible child, e.g. a Text in a Row so it wraps).

@@ -144,9 +144,8 @@ key for delivering updates without rebuilding the APK
 
 ## Limitations
 
-- Drawing with `Canvas`, a whole frame at a time; a GPU renderer and tree diffs are on the
-  [roadmap](architecture.md#roadmap).
+- Drawing with `Canvas`, a whole frame at a time; moving Android to the GPU renderer
+  (`crates/vard-gpu`, Vulkan through wgpu) and tree diffs are on the [roadmap](architecture.md#roadmap).
 - Shadows through `Paint.setShadowLayer` (hardware-accelerated on API 28+).
 - Accessibility (TalkBack) is not yet connected to the semantic tree; scrolling has no inertia.
-- There is no iOS shell yet: the C ABI for it (`vard_set_host`, `vard_callback`, `vard_emit`,
-  `vard_back*`, `vard_set_insets`) is ready.
+- iOS and macOS have their own shell: [Apple shell](apple.md).

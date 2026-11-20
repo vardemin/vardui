@@ -18,9 +18,9 @@
  .vard ──► vard-lang ──────────────────────────► vard-runtime ───────────────► platform
            lexer → parser (arena AST,             reactive graph (signals,      headless: PNG (tiny-skia)
            error recovery) → linker →             computed, effects, scopes)    Android (Kotlin host, Canvas)
-           checker (bidirectional types,          retained Node tree            [plan] iOS / Web / Desktop:
-           fixes)                                 flex layout + why tracing     GPU renderer + native views
-           registry.rs — elements, props,         inspect: tree/layout/state/lint   for IME/maps/camera
+           checker (bidirectional types,          retained Node tree            iOS / macOS (Swift host,
+           fixes)                                 flex layout + why tracing     vard-gpu on Metal)
+           registry.rs — elements, props,         inspect: tree/layout/state/lint   + native text fields
            tokens, habit aliases                  actions: tap/type/scroll/expect
                          vard-cli: check · run · test · doc · explain · new · mcp
                                    add · install · update · search · info · api
@@ -142,12 +142,19 @@ devices:
    `VardActivity`, the `:app` shell, the `firebase` package's native module). The host gets
    the whole frame — a flat list of draw records (format v2: shadows, gradients, per-corner
    radii, fonts, transforms, `crates/vard-ffi/src/frame.rs`); hit-testing and `onTap`
-   bubbling stay in the core, `Input` is a native `EditText` over the Canvas. A mutation
-   buffer instead of the full frame is the next step.
-2. **Rendering.** The main path is our own GPU renderer (wgpu/Skia class) over the existing
-   tree and layout: pixel-identical arbitrary designs and predictable performance. Native
-   platform views are embedded where integration matters: text input with IME, maps,
-   WebView, camera, video. Text shaping — HarfBuzz class with system fonts.
+   bubbling stay in the core, `Input` is a native `EditText` over the Canvas;
+   `platforms/apple` — the Swift package `VardHost` for iOS and macOS (`VardView` on a
+   `CAMetalLayer`, `VardViewController`, the std modules over UserDefaults, Keychain,
+   UserNotifications and the permission frameworks; `include/vard.h` is checked against the
+   exported symbols). A mutation buffer instead of the full frame is the next step.
+2. **Rendering.** The main path is our own GPU renderer over the existing tree and layout:
+   pixel-identical arbitrary designs and predictable performance. Native platform views
+   are embedded where integration matters: text input with IME, maps, WebView, camera,
+   video. *Done:* `crates/vard-gpu` — wgpu, one SDF pipeline (rounded boxes, borders,
+   gradients, shadows, rounded clips), a glyph atlas from the core's fonts, images; parity
+   with the headless rasterizer is a test; the Apple host draws with it on Metal, native
+   text fields float over Inputs ([Rendering](rendering.md)). Next: Android on Vulkan
+   through the same renderer, HarfBuzz-class shaping with system fonts.
 3. **Execution.** The AST interpreter is the dev engine (instant start, hot reload). For
    release — compilation to a compact register bytecode or AOT to Rust; type checks are
    already static, so runtime checks go away.
@@ -157,10 +164,11 @@ devices:
    libraries, Firebase as a package with a native module, automatic inclusion of packages'
    native modules in the Android build. Next: `async/await` sugar over callbacks.
 5. **Language.** *Done:* `Map`, `pref`, `Grid`, wrap, shadows/gradients/fonts, localized text
-   (`strings` tables, `t()`, the `locale` global — checked at compile time). Next: navigation
-   as a built-in element (today a stack + `on back` pattern), animations (`animate:` on props —
-   interpolation in the effect layer without re-running logic; needs a frame clock from the
-   host), gestures, virtualized long lists, image caching.
+   (`strings` tables, `t()`, the `locale` global — checked at compile time). Animations: `animate:` interpolates
+   prop changes in the effect layer without re-running logic, `enter:` transitions, a frame
+   clock from the host (`vard_advance`, the `animating` frame flag) and `wait MS` for
+   deterministic tests. Next: navigation as a built-in element (today a stack + `on back`
+   pattern), exit transitions, gestures, virtualized long lists, image caching.
 6. **Accessibility.** The semantic tree exists — mapping it to TalkBack/VoiceOver.
 7. **On-device inspection.** *Done:* the action protocol over TCP (`vard run --device`), a
    listener in `vard-ffi` that runs scripts on the UI thread, enabled in debuggable Android

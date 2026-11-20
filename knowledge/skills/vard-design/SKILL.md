@@ -22,6 +22,8 @@ Reference with the Tailwind -> prop table and M3/iOS/Bootstrap tokens: `vard doc
 `background` `gradient: [c1, c2] gradientAngle: 135` `radius` `radiusTopLeft...`
 `border` `borderBottom` `borderColor` `shadow: .sm|.md|.lg|.xl|.xxl` `shadowColor`
 `opacity` `offsetX/offsetY` `scale` `clip` `aspectRatio` `maxHeight` `safeArea`.
+Motion: `animate: .spring|.easeOut|...` (+ `duration:` ms) on changing props, `enter: .fade|
+.slideUp|.scale|.pop` for appearing elements.
 Text: `size` `weight: .thin...black` `lineHeight` `letterSpacing` `italic` `underline`
 `strike` `maxLines` `font`. Layout: `Row(wrap: true)`, `Grid(columns: 2, gap: 12)`,
 `Stack` for overlays, `Spacer`, `grow`.

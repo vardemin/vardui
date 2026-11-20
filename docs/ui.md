@@ -55,6 +55,11 @@ Every element accepts: sizes and `grow`, padding, `background`, `gradient` (`[Co
 `alignSelf`, `onTap`, `id`, and semantics: `role` (`.button .checkbox .switch .heading
 .link .image`), `label`, `checked`, `enabled`.
 
+Motion: `animate: .spring|.bouncy|.easeOut|.easeInOut|.easeIn|.linear` interpolates changes
+of opacity, offsets, scale, colors, radius, border and width/height over `duration:` ms;
+`enter: .fade|.slideUp|.slideDown|.slideLeft|.slideRight|.scale|.pop` plays when the element
+appears. Headless, the clock moves with `wait MS` — see [Rendering and animation](rendering.md).
+
 `id: "email"` gives a stable address `#email` for tests and inspection. A non-unique `id` on
 screen is lint `L006`.
 

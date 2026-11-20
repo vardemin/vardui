@@ -113,6 +113,11 @@ pub extern "system" fn Java_dev_vard_host_VardNative_setDark(_: JNIEnv, _: JClas
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_vard_host_VardNative_advance(_: JNIEnv, _: JClass, h: jlong, dt_ms: jfloat) -> jboolean {
+    guard(0, || app(h).map_or(0, |a| a.advance(dt_ms) as jboolean))
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_vard_host_VardNative_resize(_: JNIEnv, _: JClass, h: jlong, width: jfloat, height: jfloat) {
     guard((), || {
         if let Some(a) = app(h) {

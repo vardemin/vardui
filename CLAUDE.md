@@ -4,8 +4,10 @@ Rust workspace: `crates/vard-lang` (front-end + package linker `link.rs` + API/c
 `api.rs`), `crates/vard-runtime` (reactive core, layout, inspection, raster, native bridge +
 headless platform `Sim`), `crates/vard-pkg` (vard.toml, semver, MVS resolver, vard.lock, .vpk,
 registries + signed log), `crates/vard-cli` (`vard` binary + MCP server + `bindings` + package
-commands `pkg.rs` + registry server `server.rs`), `crates/vard-ffi` (C ABI/JNI for native hosts).
-Android host in `platforms/android` (`:vard` library, `:app` shell; packages' native modules are
+commands `pkg.rs` + registry server `server.rs`), `crates/vard-ffi` (C ABI/JNI for native hosts),
+`crates/vard-gpu` (wgpu renderer of frames + `vard_gpu_*` C ABI; a staticlib that carries all
+`vard_*` symbols for Apple). Apple host (Swift package `VardHost`, iOS + macOS) in
+`platforms/apple` (`./build-xcframework.sh --macos && swift test`). Android host in `platforms/android` (`:vard` library, `:app` shell; packages' native modules are
 included by `settings.gradle.kts`). Agent-facing knowledge lives in `knowledge/` and is
 compiled into the binary (`include_str!`), so rebuild after editing it. `packages/*` are the
 packages bundled into the binary as the `builtin` registry (`vard-pkg/build.rs`).
@@ -27,7 +29,14 @@ packages bundled into the binary as the `builtin` registry (`vard-pkg/build.rs`)
 - Every new diagnostic needs a stable code, an entry in `explain.rs` (or `vard_runtime::EXPLAIN`),
   and a `fix` whenever the correct rewrite is knowable.
 - The frame format (`crates/vard-ffi/src/frame.rs`) is decoded by hand in
-  `platforms/android/vard/.../Frame.kt`; bump `VERSION` and update both together. JNI entry
+  `platforms/android/vard/.../Frame.kt` and `platforms/apple/Sources/VardHost/VardFrame.swift`
+  and drawn by `crates/vard-gpu/src/scene.rs`; bump `VERSION` and update all together.
+  Every exported `vard_*` C function is declared in `crates/vard-ffi/include/vard.h`
+  (checked by `crates/vard-ffi/tests/header.rs`). The GPU renderer must stay pixel-close to
+  the rasterizer (`crates/vard-gpu/tests/parity.rs`, skipped without a GPU adapter).
+- Animations (`crates/vard-runtime/src/anim.rs`): animatable props are listed in
+  `anim::ANIMATABLE`/`anim::get`; the clock only moves through `advance` (hosts' vsync,
+  `wait` in tests). JNI entry
   points (`jni_api.rs`) must match `VardNative.kt`; Rust calls `VardHost.call` and
   `VardHost.measure` by name. Android build: `platforms/android/README.md` (needs cargo-ndk +
   NDK; not part of `cargo test`).

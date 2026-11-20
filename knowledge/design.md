@@ -89,6 +89,12 @@ borderBottom: 0.5`. Buttons: text style in `.primary`, filled `radius: 12, heigh
 muted #6C757D`; radius 6 (`.rounded`), 8 (`-3`); button `paddingX: 12, height: 38` (keep
 44 touch target); spacing scale 4 8 16 24 48.
 
+## Motion
+CSS `transition: all 200ms ease-out` → `animate: .easeOut, duration: 200`; SwiftUI
+`.animation(.spring)` / Compose `animate*AsState` → `animate: .spring`; Framer Motion
+`initial={{opacity:0,y:24}}` → `enter: .slideUp`. Animate state changes (expand, select,
+press feedback with `scale`), keep 150–300 ms for small elements, springs for movement.
+
 ## Checklist for a polished screen
 - One accent color; text only in `.text` / `.muted` / `.onPrimary`.
 - Consistent radius family (e.g. 8 controls, 12 cards, 999 pills) and spacing (4/8/12/16/24).

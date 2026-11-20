@@ -31,6 +31,8 @@ object VardNative {
     /** The user's language as a BCP 47 tag (`ru`, `pt-BR`); `t()` follows it. */
     @JvmStatic external fun setLocale(handle: Long, tag: String)
     @JvmStatic external fun resize(handle: Long, width: Float, height: Float)
+    /** Advance animations by [dtMs] since the previous vsync; true while they run. */
+    @JvmStatic external fun advance(handle: Long, dtMs: Float): Boolean
     /** System bars + cutout insets and the keyboard height, dp. */
     @JvmStatic external fun setInsets(handle: Long, top: Float, bottom: Float, left: Float, right: Float, keyboard: Float)
     /** Answer a `{"$callback": id}` argument with a JSON value; [keep] for repeating listeners. */

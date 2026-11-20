@@ -42,6 +42,7 @@ actions (one per line, or separated by `;`):
   permission NAME answer STATUS what the system dialog answers next (default granted)
   storage              prefs, secure values, permissions, shown notifications
   restart              cold-start the app again (storage is kept, UI state is not)
+  wait [MS]            advance the animation clock by MS (no MS: until every animation ends)
   log                  print() output and native calls so far
   lint                 UI problems (overflow, tap targets, contrast, ...)
   shot FILE.png [S]    write a screenshot at scale S (default 1)
@@ -360,6 +361,16 @@ impl Runtime {
             "storage" => Ok(ActionOut::Text(self.storage_text())),
             "restart" => {
                 self.restart()?;
+                Ok(ActionOut::Mutated)
+            }
+            "wait" => {
+                match toks.get(1) {
+                    None => self.finish_animations(),
+                    Some(ms) => {
+                        let ms: f64 = ms.trim_end_matches("ms").parse().map_err(|_| format!("`wait` takes milliseconds (`wait 150`), got `{}`", ms))?;
+                        self.advance(ms);
+                    }
+                }
                 Ok(ActionOut::Mutated)
             }
             "why" => {

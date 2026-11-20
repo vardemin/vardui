@@ -106,10 +106,24 @@ padding paddingX paddingY paddingTop paddingBottom paddingLeft paddingRight safe
 background gradient ([Color]) gradientAngle (CSS deg, 180 = down) radius radiusTopLeft
 radiusTopRight radiusBottomLeft radiusBottomRight border borderTop borderBottom borderLeft
 borderRight borderColor shadow (.sm .md .lg .xl .xxl) shadowColor opacity offsetX offsetY
-scale clip alignSelf onTap id role label checked enabled
+scale clip alignSelf onTap id role label checked enabled animate duration enter
 safeArea: .all .top .bottom .vertical .horizontal .none (adds system bar/keyboard insets to padding)
 role: .none .button .checkbox .switch .heading .link .image  (accessibility + inspection)
 id: "name" → stable test handle `#name`.
+
+## Animation
+`animate: .spring|.bouncy|.easeOut|.easeInOut|.easeIn|.linear` on an element: when an effect
+changes its opacity offsetX offsetY scale radius border width height background color
+borderColor tint, the new value is reached over `duration:` ms (default 250, spring 400) —
+logic is not re-run, taps hit the moving element. `enter: .fade|.slideUp|.slideDown|.slideLeft|
+.slideRight|.scale|.pop` plays once when the element first appears (e.g. inside `if`).
+Headless the clock stands still until `wait MS` (or `wait` = finish all); `tree` says
+`animating`, `layout` shows `opacity= offset= scale= ~animating props`, `shot` captures the
+in-between frame. No exit animations: removed elements disappear at once.
+```
+Column(height: open ? 120 : 48, background: open ? .primary : .surface, animate: .spring) { ... }
+if saved { Text("Saved", enter: .slideUp) }
+```
 
 ## Localized text
 strings { hello: "Hello, {name}", items: "{n} items" }    // default table = source language
@@ -166,7 +180,7 @@ state | lint | log | stats | theme light|dark | size W H | shot FILE.png [scale]
 mock NAME VALUE | resolve NAME VALUE | send NAME VALUE | pending          (VALUE = JSON)
 emit EVENT [ARGS] | push received|opened "T" "B" [{data}] | back [P|cancel]
 insets T B [L R] | keyboard H | locale TAG | permission NAME STATUS | permission NAME answer STATUS
-storage | restart (cold start keeping prefs/secure/permissions)
+storage | restart (cold start keeping prefs/secure/permissions) | wait [MS] (animation clock)
 expect SEL|"text"   expect no "text"   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
 SEL: @12 (node id from `tree`) | #id | "label" (exact, then whole word, then substring)
 Mutating actions print a diff: `+` added, `-` removed, `~` changed lines.

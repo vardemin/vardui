@@ -1,0 +1,4 @@
+.build/
+.swiftpm/
+VardFFI.xcframework/
+*.xcodeproj/xcuserdata/

@@ -6,7 +6,8 @@
 //! are `u32 byte length` + UTF-8.
 //!
 //! ```text
-//! header   magic "VRDF" | u16 version (=2) | u16 flags (bit0 dark, bit1 back handled by app)
+//! header   magic "VRDF" | u16 version (=2) | u16 flags (bit0 dark, bit1 back handled by app,
+//!          bit2 animations running: call `advance` on the next vsync and draw again)
 //!          | u32 background | u32 count
 //! record   u32 uid
 //!          u8 kind     0 Column 1 Row 2 Stack 3 Scroll 4 Text 5 Input 6 Image 7 Spacer 8 Grid
@@ -58,6 +59,7 @@ pub const F_UNDERLINE: u8 = 64;
 
 pub const H_DARK: u16 = 1;
 pub const H_BACK: u16 = 2;
+pub const H_ANIMATING: u16 = 4;
 
 pub fn kind_code(k: Kind) -> u8 {
     match k {
@@ -121,7 +123,7 @@ pub fn encode(rt: &mut Runtime, out: &mut Vec<u8>) {
     out.extend_from_slice(MAGIC);
     let mut w = W(out);
     w.u16(VERSION);
-    w.u16(if rt.is_dark() { H_DARK } else { 0 } | if back { H_BACK } else { 0 });
+    w.u16(if rt.is_dark() { H_DARK } else { 0 } | if back { H_BACK } else { 0 } | if rt.animating() { H_ANIMATING } else { 0 });
     w.u32(rt.token("background"));
     let count_at = w.0.len();
     w.u32(0);
@@ -297,6 +299,7 @@ pub struct Record {
 pub struct Frame {
     pub dark: bool,
     pub back_enabled: bool,
+    pub animating: bool,
     pub background: u32,
     pub records: Vec<Record>,
 }
@@ -417,5 +420,5 @@ pub fn decode(buf: &[u8]) -> Result<Frame, String> {
     if r.1 != buf.len() {
         return Err("trailing bytes in frame".into());
     }
-    Ok(Frame { dark: hflags & H_DARK != 0, back_enabled: hflags & H_BACK != 0, background, records })
+    Ok(Frame { dark: hflags & H_DARK != 0, back_enabled: hflags & H_BACK != 0, animating: hflags & H_ANIMATING != 0, background, records })
 }

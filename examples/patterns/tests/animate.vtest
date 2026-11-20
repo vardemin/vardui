@@ -1,0 +1,9 @@
+@view Animated
+tap "Show"
+expect #details
+find #panel
+wait 100
+layout
+wait
+expect "Details"
+layout
