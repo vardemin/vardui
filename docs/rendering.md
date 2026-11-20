@@ -35,6 +35,8 @@ sRGB-encoded space, like the rasterizer and the platform canvases, so colors mat
 `crates/vard-gpu/tests/parity.rs` renders a screen with every feature on the GPU and with
 tiny-skia and requires a mean channel difference under 1.5/255 (it is about 0.1).
 
+A multi-line `Input` (`lines` > 1) carries the frame flag `128` and its wrapped lines (the
+value, or the placeholder while empty), drawn top-down from `y + padTop` like a Text.
 Mobile and web hosts float native text fields over `Input`s (IME, selection, autofill), so
 the renderer leaves Input text to them (`Options::native_inputs`). The desktop host edits
 text itself: the renderer then draws the text and a caret in the focused Input

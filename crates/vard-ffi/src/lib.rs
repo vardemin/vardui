@@ -28,7 +28,6 @@ mod jni_api;
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use vard_lang::compile;
-use vard_runtime::layout::apply_xf;
 pub use vard_runtime::native::NativeHost;
 use vard_runtime::node::Kind;
 use vard_runtime::rt::NodeKey;
@@ -110,19 +109,7 @@ impl App {
 
     /// Deepest visible node under (x, y) in dp, in paint order (last painted wins).
     pub fn hit(&self, x: f32, y: f32) -> Option<NodeKey> {
-        let rt = self.rt.as_ref()?;
-        fn walk(rt: &Runtime, k: NodeKey, x: f32, y: f32) -> Option<NodeKey> {
-            let n = rt.nodes.get(k)?;
-            if (n.kind == Kind::Scroll || n.clip) && !contains(apply_xf(n.rect, n.xf), x, y) {
-                return None; // Scroll / clip: true clips its subtree
-            }
-            if let Some(hit) = n.children.iter().rev().find_map(|&c| walk(rt, c, x, y)) {
-                return Some(hit);
-            }
-            let r = rt.visible_rect(k)?;
-            contains(r, x, y).then_some(k)
-        }
-        walk(rt, rt.root, x, y)
+        self.rt.as_ref()?.hit(x, y)
     }
 
     /// Tap at (x, y) dp: hit-test, then bubble to the nearest `onTap` like `Runtime::tap`.
@@ -377,10 +364,6 @@ impl App {
     pub fn has_errors(&self) -> bool {
         self.rt.is_none() || self.rt.as_ref().is_some_and(|rt| !rt.errors.is_empty())
     }
-}
-
-fn contains(r: vard_runtime::node::Rect, x: f32, y: f32) -> bool {
-    x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h
 }
 
 fn scroll_pos(rt: &Runtime, mut k: NodeKey) -> f32 {

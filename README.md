@@ -28,14 +28,14 @@ $ vard run --do 'tap "Tap me"'
 | Component | What it does |
 |---|---|
 | `crates/vard-lang` | lexer, parser with error recovery, bidirectional type checker, diagnostics with machine-applicable fixes, element registry (single source of truth for compiler, runtime and docs), std written in Vard: views and the platform API (`extern fn` / `extern event`), package linker and compiler-computed package contracts |
-| `crates/vard-runtime` | fine-grained reactivity (signals / computed / effects, no virtual DOM), keyed lists, flex/grid/wrap layout that explains sizes (`why`), semantic tree, diffs, UI lints, headless PNG rasterization (shadows, gradients, per-corner radii, project fonts), JSON bridge to native code, platform simulator (prefs, secure storage, permissions, push, back, insets) |
+| `crates/vard-runtime` | fine-grained reactivity (signals / computed / effects, no virtual DOM), keyed lists, flex/grid/wrap layout that explains sizes (`why`), semantic tree, diffs, UI lints, headless PNG rasterization (shadows, gradients, per-corner radii, project fonts), JSON bridge to native code, platform simulator (prefs, secure storage, permissions, push, back, insets, clock); built-ins for everyday apps: dates and calendar math, finance math, locale-aware number formatting |
 | `crates/vard-pkg` | packages: `vard.toml`, semver, minimal version selection, `vard.lock`, deterministic `.vpk` archives, static registries (builtin, directory, HTTP) with a signed log |
 | `crates/vard-cli` | `vard check [--fix] [--json]`, `run --do`, `test` (`.vtest`), `doc`, `explain`, `new`, `bindings --kotlin`; packages: `search info add remove install update api pack publish yank bundle`; `registry init/token/serve/verify`; `mcp` (MCP server on stdio) |
-| `crates/vard-ffi` | `cdylib` for native shells: C ABI (`vard_*`) and JNI — mount, touches, input, theme, insets, predictive back, events, native module callbacks, platform text measurement, frame (format v2) |
+| `crates/vard-ffi` | `cdylib` for native shells: C ABI (`vard_*`) and JNI — mount, touches, input, theme, insets, predictive back, events, native module callbacks, platform text measurement, frame (format v3) |
 | `platforms/android` | `:vard` library (runtime + `VardActivity` + core modules), `:app` shell; packages' native modules are included automatically ([how to build](https://vardemin.github.io/vardui/android.html)) |
 | `packages/` | packages bundled with the toolchain (the `builtin` registry): `tailwind`, `firebase` (with an Android native module) |
 | `knowledge/` | `llms.txt` (complete language reference), `design.md`, `native.md`, `packages.md`, `AGENTS.md`, skills `vard-app`, `vard-debug`, `vard-native`, `vard-design`, `vard-packages` — `vard new` puts them into every project together with `.mcp.json` |
-| `examples/` | `todo`, `patterns`, `native` (permissions, push, prefs, keychain, edge-to-edge, back), `showcase` (Tailwind-style design), `firebase` — all with `.vtest` files |
+| `examples/` | `todo`, `patterns`, `native` (permissions, push, prefs, keychain, edge-to-edge, back), `showcase` (Tailwind-style design), `pocket` (notes, money tracker, journal and financial calculators in one Tailwind-style app), `firebase` — all with `.vtest` files |
 
 ### Platform features
 
@@ -63,6 +63,16 @@ headless screenshots:
 
 Bytecode compilation and accessibility mapping are on the
 [roadmap](https://vardemin.github.io/vardui/architecture.html#roadmap).
+
+## Showcase: Pocket
+
+[`examples/pocket`](examples/pocket) — notes, a money tracker, a journal and financial
+calculators in one Tailwind-style app (multi-line inputs, dates and calendar math,
+locale-aware money, bar charts, a bottom sheet, data in `pref`s, light and dark), tested
+headless by `vard test examples/pocket`. Run it on a phone with
+`./gradlew installDebug -Pvard.app=examples/pocket` (Android) or
+`platforms/apple/run-ios-sim.sh examples/pocket "iPhone 15 Pro"` (iOS). Tour:
+[Showcase: Pocket](https://vardemin.github.io/vardui/pocket.html).
 
 ## Quick start
 

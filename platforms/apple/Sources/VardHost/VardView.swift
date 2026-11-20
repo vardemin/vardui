@@ -21,6 +21,12 @@ public final class VardView: VardPlatformView {
     private var link: CADisplayLink?
     private var lastTimestamp: CFTimeInterval = 0
     private var inputs: [UInt32: PlatformTextField] = [:]
+    /// Inputs with `lines` > 1 (Enter inserts a newline, text wraps)
+    private var multiline = Set<UInt32>()
+    #if canImport(UIKit)
+    /// multi-line Inputs are text views (UITextField has one line)
+    private var areas: [UInt32: VardTextArea] = [:]
+    #endif
     /// the text this host last sent per Input: a different value from the app (clear on
     /// submit, formatting) replaces the field's text even while it is being edited
     private var sent: [UInt32: String] = [:]
@@ -348,11 +354,20 @@ public final class VardView: VardPlatformView {
 
     private func syncInputs(_ frame: VardFrame) {
         var seen = Set<UInt32>()
+        multiline = Set(frame.records.filter { $0.isInput && $0.multiline }.map { $0.uid })
         for r in frame.records where r.isInput {
-            seen.insert(r.uid)
-            let f = inputs[r.uid] ?? makeField(r.uid)
             let rect = CGRect(x: CGFloat(r.rect.x + r.pad[0]), y: CGFloat(r.rect.y + r.pad[1]),
                               width: CGFloat(r.rect.w - r.pad[0] - r.pad[2]), height: CGFloat(r.rect.h - r.pad[1] - r.pad[3]))
+            #if canImport(UIKit)
+            if r.multiline {
+                let a = areas[r.uid] ?? makeArea(r.uid)
+                if a.frame != rect { a.frame = rect }
+                style(a, r)
+                continue
+            }
+            #endif
+            seen.insert(r.uid)
+            let f = inputs[r.uid] ?? makeField(r.uid)
             if f.frame != rect { f.frame = rect }
             style(f, r)
         }
@@ -360,6 +375,12 @@ public final class VardView: VardPlatformView {
             f.removeFromSuperview()
             inputs[uid] = nil
         }
+        #if canImport(UIKit)
+        for (uid, a) in areas where !multiline.contains(uid) {
+            a.removeFromSuperview()
+            areas[uid] = nil
+        }
+        #endif
     }
 
     private func color(_ c: UInt32, _ opacity: Float) -> CGColor {
@@ -428,6 +449,41 @@ public final class VardView: VardPlatformView {
         engine.focus(uid: 0)
         requestFrame()
     }
+
+    private func makeArea(_ uid: UInt32) -> VardTextArea {
+        let a = VardTextArea(uid: uid)
+        a.onChange = { [weak self] a in
+            guard let self else { return }
+            sent[UInt32(a.tag)] = a.text ?? ""
+            engine.inputText(uid: UInt32(a.tag), a.text ?? "")
+            requestFrame()
+        }
+        a.onFocus = { [weak self] a, focused in
+            self?.engine.focus(uid: focused ? UInt32(a.tag) : 0)
+            self?.requestFrame()
+        }
+        addSubview(a)
+        areas[uid] = a
+        return a
+    }
+
+    private func style(_ a: VardTextArea, _ r: VardFrame.Record) {
+        if a.text != r.text, !a.isFirstResponder || sent[r.uid] != r.text {
+            a.text = r.text
+            sent[r.uid] = r.text
+        }
+        let uiFont = font(r) as? UIFont
+        a.font = uiFont
+        a.textColor = UIColor(cgColor: color(r.color, r.opacity))
+        a.isEditable = !r.disabled
+        a.alpha = CGFloat(r.opacity)
+        a.textAlignment = r.textAlign == 1 ? .center : r.textAlign == 2 ? .right : .natural
+        a.placeholder.text = r.placeholder
+        a.placeholder.font = uiFont
+        a.placeholder.textColor = UIColor(cgColor: color(r.placeholderColor, r.opacity))
+        a.placeholder.isHidden = !r.text.isEmpty
+        a.setNeedsLayout()
+    }
     #else
     private final class Delegate: NSObject, NSTextFieldDelegate {
         weak var view: VardView?
@@ -440,6 +496,12 @@ public final class VardView: VardPlatformView {
         func controlTextDidBeginEditing(_ n: Notification) {
             guard let f = n.object as? NSTextField, let v = view else { return }
             v.engine.focus(uid: UInt32(f.tag))
+        }
+        /// multi-line Inputs: Return inserts a newline instead of ending editing
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
+            guard let v = view, v.multiline.contains(UInt32(control.tag)), sel == #selector(NSResponder.insertNewline(_:)) else { return false }
+            textView.insertNewlineIgnoringFieldEditor(nil)
+            return true
         }
         func controlTextDidEndEditing(_ n: Notification) {
             guard let f = n.object as? NSTextField, let v = view else { return }
@@ -498,6 +560,12 @@ public final class VardView: VardPlatformView {
         f.font = font(r) as? NSFont
         f.isEnabled = !r.disabled
         f.alignment = r.textAlign == 1 ? .center : r.textAlign == 2 ? .right : .natural
+        if f.usesSingleLineMode == r.multiline {
+            f.usesSingleLineMode = !r.multiline
+            f.cell?.wraps = r.multiline
+            f.cell?.isScrollable = !r.multiline
+            f.lineBreakMode = r.multiline ? .byWordWrapping : .byClipping
+        }
         f.placeholderAttributedString = NSAttributedString(string: r.placeholder, attributes: [
             .foregroundColor: NSColor(cgColor: color(r.placeholderColor, r.opacity)) ?? .placeholderTextColor,
             .font: (font(r) as? NSFont) ?? .systemFont(ofSize: 15),
@@ -505,3 +573,41 @@ public final class VardView: VardPlatformView {
     }
     #endif
 }
+
+#if canImport(UIKit)
+/// A multi-line `Input` (`lines` > 1): a text view with a placeholder, text from the top.
+final class VardTextArea: UITextView, UITextViewDelegate {
+    let placeholder = UILabel()
+    var onChange: ((VardTextArea) -> Void)?
+    var onFocus: ((VardTextArea, Bool) -> Void)?
+
+    init(uid: UInt32) {
+        super.init(frame: .zero, textContainer: nil)
+        tag = Int(uid)
+        backgroundColor = .clear
+        textContainerInset = .zero
+        textContainer.lineFragmentPadding = 0
+        placeholder.numberOfLines = 0
+        placeholder.isUserInteractionEnabled = false
+        addSubview(placeholder)
+        delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let size = placeholder.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
+        placeholder.frame = CGRect(x: 0, y: 0, width: bounds.width, height: min(size.height, bounds.height))
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        placeholder.isHidden = !text.isEmpty
+        onChange?(self)
+    }
+
+    func textViewDidBeginEditing(_ textView: UITextView) { onFocus?(self, true) }
+    func textViewDidEndEditing(_ textView: UITextView) { onFocus?(self, false) }
+}
+#endif

@@ -6,7 +6,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
-use vard_runtime::frame::{Frame, Record, F_BACKGROUND, F_ITALIC, F_SECURE, F_STRIKE, F_UNDERLINE};
+use vard_runtime::frame::{Frame, Record, F_BACKGROUND, F_ITALIC, F_MULTILINE, F_SECURE, F_STRIKE, F_UNDERLINE};
 use vard_runtime::node::Rect;
 use vard_runtime::raster::gradient_line;
 use vard_runtime::text::TextEngine;
@@ -321,6 +321,24 @@ impl Builder<'_> {
                         self.fill(intersect(Rect { x, y: y + line_h / 2.0 + px * 0.42, w: *lw, h: thick }, clip), [0.0; 4], rec.color, rec.opacity);
                     }
                 }
+            }
+            5 if !self.native_inputs && rec.flags & F_MULTILINE != 0 => {
+                // wrapped by the core (value, or placeholder while empty), top-aligned
+                let empty = rec.text.is_empty();
+                let c = if empty { rec.placeholder_color } else { rec.color };
+                let saved = self.clip;
+                let s = self.s;
+                self.clip = [saved[0].max(r.x * s), saved[1].max(r.y * s), saved[2].min((r.x + r.w) * s), saved[3].min((r.y + r.h) * s)];
+                let mut end = (r.x + pl, r.y + pt);
+                for (i, (line, _)) in rec.lines.iter().enumerate() {
+                    let y = r.y + pt + i as f32 * line_h;
+                    let x = self.text(line, r.x + pl, y, line_h, px, face, spacing, italic, c, rec.opacity);
+                    end = (if empty { r.x + pl } else { x }, y);
+                }
+                if rec.uid == self.focused && self.caret {
+                    self.fill(Rect { x: end.0, y: end.1 + line_h * 0.15, w: (1.5f32).max(1.0 / self.s), h: line_h * 0.7 }, [0.0; 4], rec.color, rec.opacity);
+                }
+                self.clip = saved;
             }
             5 if !self.native_inputs => {
                 let empty = rec.text.is_empty();

@@ -1,0 +1,107 @@
+// Journal: one entry a day with a mood, a streak and a two-week mood strip.
+
+view JournalScreen(bind entries: [Entry], today: Int, onWrite: fn()) {
+  let sorted = entries.sortedBy(e => e.date).reversed()
+  let wroteToday = entries.any(e => startOfDay(e.date) == startOfDay(today))
+  let days = streak(entries, today)
+  let recent = entries.filter(e => daysBetween(e.date, today) < 30)
+  let avg = recent.isEmpty ? 0.0 : recent.map(e => e.mood).sum() / recent.count.toFloat()
+
+  Column(grow: 1) {
+    ScreenHeader("Journal", subtitle: formatDate(today, "EEEE, d MMMM"), action: "✎", actionLabel: "Write today's entry", onAction: onWrite)
+    Scroll(grow: 1, paddingX: 20, paddingBottom: 24, gap: 16) {
+      Row(gap: 12) {
+        StatTile(label: "Streak", value: days == 1 ? "1 day" : "{days} days", tone: days > 0 ? .primary : .text)
+        StatTile(label: "Entries", value: "{entries.count}")
+        StatTile(label: "Avg mood", value: recent.isEmpty ? "—" : avg.fixed(1))
+      }
+      TwCard {
+        Text("Last two weeks", size: 14, weight: .semibold)
+        Row(justify: .between) {
+          for i in range(0, 14) {
+            MoodDot(entry: entries.find(e => startOfDay(e.date) == startOfDay(addDays(today, i - 13))), isToday: i == 13)
+          }
+        }
+        Row(gap: 12, wrap: true) {
+          for m in range(1, 6) {
+            Row(gap: 4, align: .center) {
+              Column(width: 8, height: 8, radius: 4, background: moodColor(m))
+              Text(moodName(m), size: 11, color: .muted)
+            }
+          }
+        }
+      }
+      if !wroteToday {
+        Column(padding: 20, gap: 10, radius: 16, gradient: [#EEF2FF, #FAE8FF], gradientAngle: 135, role: .button, label: "Write today's entry", onTap: onWrite) {
+          Text("How was your day?", size: 18, weight: .bold, color: #312E81)
+          Text("A few lines are enough. Writing every day keeps the streak alive.", size: 14, color: #4338CA)
+          Text("Write now →", size: 14, weight: .semibold, color: #4F46E5)
+        }
+      }
+      for e in sorted by e.id {
+        EntryCard(entry: e, today: today, onDelete: { entries.removeWhere(x => x.id == e.id) })
+      }
+      if entries.isEmpty {
+        EmptyState(icon: "☾", title: "Your journal is empty", hint: "Write about today: what happened, how you felt.")
+      }
+    }
+  }
+}
+
+view MoodDot(entry: Entry?, isToday: Bool) {
+  Column(gap: 4, align: .center) {
+    Column(width: 16, height: 16, radius: 8, background: entry != nil ? moodColor(entry!.mood) : .clear,
+           border: entry != nil ? 0 : 1.5, borderColor: isToday ? .primary : .ring)
+  }
+}
+
+view EntryCard(entry: Entry, today: Int, onDelete: fn()) {
+  state expanded = false
+  Column(padding: 16, gap: 8, radius: 16, background: .card, border: 1, borderColor: .ring, role: .button, label: formatDate(entry.date, "EEEE, d MMMM"), onTap: { expanded = !expanded }) {
+    Row(gap: 10, align: .center) {
+      Column(width: 40, height: 44, radius: 10, background: .accent, align: .center, justify: .center) {
+        Text(formatDate(entry.date, "d"), size: 16, lineHeight: 18, weight: .bold, color: .onAccent)
+        Text(formatDate(entry.date, "MMM").upper(), size: 9, lineHeight: 12, weight: .semibold, color: .onAccent)
+      }
+      Column(grow: 1, gap: 2) {
+        Text(daysBetween(entry.date, today) == 0 ? "Today" : daysBetween(entry.date, today) == 1 ? "Yesterday" : formatDate(entry.date, "EEEE"), size: 15, weight: .semibold)
+        Text(formatDate(entry.date, "HH:mm"), size: 12, color: .muted)
+      }
+      Row(paddingX: 10, height: 26, radius: 13, align: .center, gap: 6, background: .surface) {
+        Column(width: 8, height: 8, radius: 4, background: moodColor(entry.mood))
+        Text(moodName(entry.mood), size: 12, weight: .medium)
+      }
+    }
+    Text(entry.text, size: 15, lineHeight: 22, maxLines: expanded ? 0 : 3)
+    if expanded {
+      Row(justify: .end, enter: .fade) {
+        TwButton("Delete entry", onTap: onDelete, variant: .ghost, size: .sm)
+      }
+    }
+  }
+}
+
+view JournalEditor(today: Int, onClose: fn(), onSave: fn(Entry)) {
+  state mood = 0
+  state text = ""
+  let canSave = mood > 0 && !text.trim().isEmpty
+
+  Column(grow: 1, safeArea: .vertical, background: .background) {
+    SheetHeader(title: formatDate(today, "EEEE, d MMM"), onClose: onClose,
+                onSave: { onSave(Entry(id: 0, date: today, mood: mood, text: text.trim())) }, saveLabel: "Save", canSave: canSave)
+    Scroll(grow: 1, padding: 20, gap: 16) {
+      Text("How do you feel?", size: 18, weight: .bold)
+      Row(justify: .between) {
+        for m in range(1, 6) {
+          Column(width: 60, minHeight: 72, gap: 6, align: .center, justify: .center, radius: 14,
+                 background: mood == m ? .accent : .clear, role: .button, label: moodName(m), checked: mood == m, onTap: { mood = m }) {
+            Column(width: 32, height: 32, radius: 16, background: moodColor(m), scale: mood == m ? 1.15 : 1, animate: .bouncy)
+            Text(moodName(m), size: 12, weight: mood == m ? .semibold : .regular, color: mood == m ? .text : .muted)
+          }
+        }
+      }
+      TextArea("What happened today?", value: text, placeholder: "Write a few lines…", lines: 10)
+      Text("{text.trim().split(" ").filter(w => w != "").count} words", size: 12, color: .muted, textAlign: .end)
+    }
+  }
+}

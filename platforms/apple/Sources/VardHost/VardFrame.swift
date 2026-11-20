@@ -1,6 +1,6 @@
 import Foundation
 
-/// Decoded `vard_frame` buffer (format v2, `crates/vard-ffi/src/frame.rs`). Units are points.
+/// Decoded `vard_frame` buffer (format v3, `crates/vard-runtime/src/frame.rs`). Units are points.
 /// The GPU renderer draws the frame itself; the host reads it for the header flags and to
 /// place native text fields over `Input` records.
 public struct VardFrame {
@@ -35,6 +35,8 @@ public struct VardFrame {
         public var secure: Bool { flags & 4 != 0 }
         public var disabled: Bool { flags & 16 != 0 }
         public var italic: Bool { flags & 8 != 0 }
+        /// Input with `lines` > 1: wraps, Enter inserts a newline.
+        public var multiline: Bool { flags & 128 != 0 }
     }
 
     public var dark: Bool
@@ -45,7 +47,7 @@ public struct VardFrame {
 
     public static func decode(_ data: Data) -> VardFrame? {
         var r = Reader(data: [UInt8](data))
-        guard r.bytes(4) == Array("VRDF".utf8), r.u16() == 2 else { return nil }
+        guard r.bytes(4) == Array("VRDF".utf8), r.u16() == 3 else { return nil }
         let flags = r.u16()
         let background = r.u32()
         let count = Int(r.u32())

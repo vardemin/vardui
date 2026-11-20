@@ -13,10 +13,11 @@ Kotlin host that draws the result and connects the platform. Sources:
 
 ```
  assets/app/**.vard, fonts/, assets/ ──► VardNative.create ──► Rust: compile → mount → layout
-                                                     │  frame(): draw records (format v2)
+                                                     │  frame(): draw records (format v3)
  VardView.onDraw  ◄──────────── ByteArray ───────────┘  rect, background, gradient, shadow, radii, text, ...
  touch ─► VardNative.tap(x, y)            hit-test and bubbling to onTap — in the core
  EditText ─► inputText / submit / focus   a real EditText over each Input, the IME works
+                                          (multi-line, top-aligned for `lines` > 1)
  extern fn ─► VardHost.call(name, json)  ─► VardModule (Kotlin) ─► callback(id, json) / emit(event)
  insets / back gesture / onResume / intents ─► setInsets / backProgress / back / emit(...)
 ```

@@ -62,6 +62,16 @@ Touch targets: keep the tappable element at least 44×44 even when the visual is
 wrap a 32dp pill in `Row(height: 44, align: .center, onTap: ...)` (see Interests chips in
 examples/showcase).
 
+Tailwind UI pieces in the `tailwind` package: `<textarea rows=4>` → `TextArea(..., lines: 4)`
+(or `Input(lines: 4)`), segmented control → `Segmented(options:, selected:)`, filter pills →
+`Chip`, `<progress>` / meter bars → `Progress(value: 0..1)`, icon buttons → `IconButton("✕",
+label: "Close")`. Override a package token in your own `theme { }` (e.g. a darker
+`success` for text contrast). Bottom sheet: the last child of a root `Stack` —
+`Column(grow: 1, background: #0F172A66) { Column(grow: 1, onTap: close); Column(radiusTopLeft: 24,
+radiusTopRight: 24, safeArea: .bottom, enter: .slideUp) { ... } }`. Charts: bars are Columns
+with `height: value / max * H` (`list.max() ?? 1`), shares are `Progress`. Money:
+`x.format(2)` groups digits for the locale. Full app: examples/pocket.
+
 ## Material 3 (baseline) tokens
 ```
 theme { primary: #6750A4, onPrimary: #FFFFFF, background: #FEF7FF, surface: #F3EDF7,

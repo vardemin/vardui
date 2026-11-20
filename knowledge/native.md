@@ -26,6 +26,20 @@ on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
 - `setColorScheme(.dark|.light|.system)`, `isDark`, `screenWidth`, `screenHeight`,
   `platform` (`android ios macos windows linux web headless`), `openUrl(url)`, `shareText(text)`, `haptic(.success)`, `openAppSettings()`.
 
+## Time
+`now()` (std `extern fn now() -> Int`) is milliseconds of **local wall-clock time**: the
+host adds the device's time-zone offset (with DST), so `date()`, `formatDate()`,
+`startOfDay()`, `addDays()`, `addMonths()` and `daysBetween()` are plain calendar math,
+identical on every platform and in tests. Store timestamps from `now()` in `pref`s as Int.
+```
+state today = now()
+on appResume { today = now() }            // a new day may have started in the background
+Text(formatDate(today, "EEEE, d MMMM"))   // month/weekday names follow `locale` (en, ru)
+```
+Headless, `now()` is 2026-01-15 09:30 (a Thursday) until a test moves it:
+`clock 2026-03-01 10:00`, `clock +1d`, `clock -2h`. It is not logged as a native call;
+`mock now 1767225600000` also works.
+
 ## Storage
 ```
 pref onboarded = false          // view member: state persisted in preferences, app-wide by name

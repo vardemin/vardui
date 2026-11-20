@@ -355,6 +355,14 @@ impl Runtime {
                     let argv = self.ordered_args(p, &p.externs[xi].params, args, sc);
                     return self.call_extern(p, xi, argv);
                 }
+                if let Some(params) = vard_lang::registry::builtin_fn(name) {
+                    let mut argv: Vec<Value> = vec![Value::Nil; params.len().max(args.len())];
+                    for (i, a) in args.iter().enumerate() {
+                        let idx = a.name.as_ref().and_then(|n| params.iter().position(|x| x == n)).unwrap_or(i);
+                        argv[idx] = self.eval(p, a.value, sc);
+                    }
+                    return self.builtin(name, &argv);
+                }
                 let argv: Vec<Value> = args.iter().map(|a| self.eval(p, a.value, sc)).collect();
                 match (name.as_str(), argv.as_slice()) {
                     ("print", vals) => {
@@ -393,6 +401,53 @@ impl Runtime {
                 let argv = self.args_for(p, &f, args, sc);
                 self.call_func(p, &f, argv, p.span(e))
             }
+        }
+    }
+
+    pub(crate) fn locale_now(&mut self) -> String {
+        match self.sig_get(self.locale_sig) {
+            Value::Str(s) => s.to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// Built-in functions listed in `registry::BUILTIN_FNS` (arguments in declared order).
+    fn builtin(&mut self, name: &str, argv: &[Value]) -> Value {
+        use crate::stdlib as sl;
+        let f = |i: usize| argv.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let int = |i: usize| match argv.get(i) {
+            Some(Value::Int(n)) => *n,
+            Some(Value::Float(x)) => *x as i64,
+            _ => 0,
+        };
+        match name {
+            "pow" => Value::Float(f(0).powf(f(1))),
+            "sqrt" => Value::Float(f(0).sqrt()),
+            "log" => Value::Float(f(0).ln()),
+            "exp" => Value::Float(f(0).exp()),
+            "clamp" => match (argv.first(), argv.get(1), argv.get(2)) {
+                (Some(Value::Int(x)), Some(Value::Int(lo)), Some(Value::Int(hi))) => Value::Int((*x).max(*lo).min(*hi)),
+                _ => Value::Float(f(0).max(f(1)).min(f(2))),
+            },
+            "date" => {
+                let d = sl::parts(int(0));
+                let fields = [("year", d.year), ("month", d.month), ("day", d.day), ("hour", d.hour), ("minute", d.minute), ("second", d.second), ("weekday", d.weekday)]
+                    .into_iter()
+                    .map(|(k, v)| (Rc::from(k), Value::Int(v)))
+                    .collect();
+                Value::Struct(Rc::new(StructVal { name: Rc::from("DateParts"), fields }))
+            }
+            "dateOf" => Value::Int(sl::date_of(int(0), int(1), int(2), int(3), int(4))),
+            "addDays" => Value::Int(int(0) + int(1) * sl::DAY_MS),
+            "addMonths" => Value::Int(sl::add_months(int(0), int(1))),
+            "startOfDay" => Value::Int(sl::start_of_day(int(0))),
+            "daysBetween" => Value::Int(sl::days_between(int(0), int(1))),
+            "formatDate" => {
+                let locale = self.locale_now();
+                let pattern = argv.get(1).map(|v| v.display()).unwrap_or_default();
+                Value::str(&sl::format_date(int(0), &pattern, &locale))
+            }
+            _ => Value::Nil,
         }
     }
 
@@ -597,9 +652,72 @@ impl Runtime {
                 };
                 Value::str(&format!("{:.*}", digits, r.as_f64().unwrap_or(0.0)))
             }
+            (Value::Int(_) | Value::Float(_), "format") => {
+                let digits = match arg(0) {
+                    Value::Int(d) => d.clamp(0, 12) as usize,
+                    _ => 0,
+                };
+                let x = r.as_f64().unwrap_or(0.0);
+                let locale = self.locale_now();
+                Value::str(&crate::stdlib::format_number(x, digits, &locale))
+            }
+            (Value::Str(s), "replace") => match (arg(0), arg(1)) {
+                (Value::Str(a), Value::Str(b)) if !a.is_empty() => Value::str(&s.replace(&*a, &b)),
+                _ => r.clone(),
+            },
+            (Value::Str(s), "padStart") => {
+                let width = match arg(0) {
+                    Value::Int(n) => n.max(0) as usize,
+                    _ => 0,
+                };
+                let fill = match arg(1) {
+                    Value::Str(f) if !f.is_empty() => f.to_string(),
+                    _ => " ".to_string(),
+                };
+                let have = s.chars().count();
+                let mut pad = String::new();
+                while pad.chars().count() + have < width {
+                    pad.push_str(&fill);
+                }
+                let pad: String = pad.chars().take(width.saturating_sub(have)).collect();
+                Value::str(&(pad + s))
+            }
             (Value::List(l), _) => {
                 let l = l.clone();
                 match name {
+                    "take" => {
+                        let n = match arg(0) {
+                            Value::Int(n) => n.max(0) as usize,
+                            _ => 0,
+                        };
+                        Value::List(Rc::new(l.iter().take(n).cloned().collect()))
+                    }
+                    "distinct" => {
+                        let mut out: Vec<Value> = Vec::new();
+                        for x in l.iter() {
+                            if !out.contains(x) {
+                                out.push(x.clone());
+                            }
+                        }
+                        Value::List(Rc::new(out))
+                    }
+                    "max" | "min" => {
+                        let mut best: Option<Value> = None;
+                        for x in l.iter() {
+                            best = Some(match best {
+                                None => x.clone(),
+                                Some(b) => {
+                                    let less = self.arith(BinOp::Lt, x.clone(), b.clone(), span).truthy();
+                                    if less == (name == "min") && x != &b {
+                                        x.clone()
+                                    } else {
+                                        b
+                                    }
+                                }
+                            });
+                        }
+                        best.unwrap_or(Value::Nil)
+                    }
                     "contains" => Value::Bool(l.contains(&arg(0))),
                     "indexOf" => l.iter().position(|x| *x == arg(0)).map(|i| Value::Int(i as i64)).unwrap_or(Value::Nil),
                     "map" => Value::List(Rc::new(l.iter().map(|x| self.call1(p, &arg(0), x.clone(), span)).collect())),

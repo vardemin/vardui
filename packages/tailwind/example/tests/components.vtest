@@ -4,3 +4,14 @@ type "you@example.com" "leslie@example.com"
 expect "Save" enabled
 tap "Save"
 expect "Saved"
+expect "$12 / month"
+tap "Yearly"
+expect "Yearly" checked
+expect "$120 / year"
+tap "Design"
+expect "Design" checked
+expect "All" unchecked
+type "A few words about you" "Designer from Lisbon"
+expect "Profile 50% complete"
+tap "Clear"
+expect "Profile 0% complete"

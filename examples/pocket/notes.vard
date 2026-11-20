@@ -1,0 +1,75 @@
+// Notes: searchable, pinnable, color-tagged; the editor is a full-screen page with a
+// multi-line Input (`lines:`), so long notes wrap and Enter makes a new line.
+
+view NotesScreen(bind notes: [Note], onOpen: fn(Int), onNew: fn()) {
+  state query = ""
+  let q = query.trim().lower()
+  let found = notes.filter(n => q.isEmpty || n.title.lower().contains(q) || n.body.lower().contains(q))
+  let pinned = found.filter(n => n.pinned).sortedBy(n => n.updated).reversed()
+  let others = found.filter(n => !n.pinned).sortedBy(n => n.updated).reversed()
+
+  Column(grow: 1) {
+    ScreenHeader("Notes", subtitle: "{notes.count} notes", action: "+", actionLabel: "New note", onAction: onNew)
+    Row(paddingX: 20, paddingBottom: 8) {
+      Input(value: query, placeholder: "Search notes", grow: 1, size: 15, radius: 12, border: 0, background: .ring, id: "search")
+    }
+    Scroll(grow: 1, paddingX: 20, paddingBottom: 24, gap: 12) {
+      if !pinned.isEmpty {
+        Text("PINNED", size: 12, weight: .semibold, letterSpacing: 1.2, color: .muted, paddingTop: 8)
+        Grid(columns: screenWidth >= 600 ? 3 : 2, gap: 12) {
+          for n in pinned by n.id { NoteCard(note: n, onTap: { onOpen(n.id) }) }
+        }
+      }
+      if !others.isEmpty {
+        if !pinned.isEmpty { Text("OTHERS", size: 12, weight: .semibold, letterSpacing: 1.2, color: .muted, paddingTop: 8) }
+        Grid(columns: screenWidth >= 600 ? 3 : 2, gap: 12) {
+          for n in others by n.id { NoteCard(note: n, onTap: { onOpen(n.id) }) }
+        }
+      }
+      if found.isEmpty {
+        if q.isEmpty {
+          EmptyState(icon: "✎", title: "No notes yet", hint: "Tap + to write the first one.")
+        } else {
+          EmptyState(icon: "?", title: "Nothing found", hint: "No note mentions “{query.trim()}”.")
+        }
+      }
+    }
+  }
+}
+
+view NoteCard(note: Note, onTap: fn()) {
+  Column(padding: 14, gap: 6, minHeight: 120, radius: 16, background: isDark ? .card : noteTint(note.color),
+         border: 1, borderColor: isDark ? noteDot(note.color) : .clear, role: .button, label: noteTitle(note), onTap: onTap, enter: .fade) {
+    Row(gap: 6, align: .center) {
+      Text(noteTitle(note), size: 15, weight: .semibold, maxLines: 1, grow: 1)
+      if note.pinned { Text("★", size: 13, color: isDark ? noteDot(note.color) : .slate700) }
+    }
+    // text-slate-600 on the tinted card (muted is too light on amber-100)
+    Text(note.body, size: 13, lineHeight: 18, color: isDark ? .muted : .slate600, maxLines: 5, grow: 1)
+    Text(formatDate(note.updated, "d MMM"), size: 11, weight: .medium, color: isDark ? .muted : .slate600)
+  }
+}
+
+view NoteEditor(bind note: Note, onClose: fn(), onDelete: fn()) {
+  Column(grow: 1, safeArea: .vertical, background: .background) {
+    SheetHeader(title: note.pinned ? "Pinned note" : "Note", onClose: onClose, onSave: onClose, saveLabel: "Done", closeLabel: "‹ Notes")
+    Scroll(grow: 1, padding: 20, gap: 12) {
+      Input(value: note.title, placeholder: "Title", size: 22, weight: .bold, border: 0, paddingX: 0, background: .clear, id: "title",
+            onChange: _ => { note.updated = now() })
+      Input(value: note.body, placeholder: "Start writing…", lines: 12, size: 16, border: 0, paddingX: 0, background: .clear, id: "body",
+            onChange: _ => { note.updated = now() })
+      Text("Edited {formatDate(note.updated, "d MMM, HH:mm")} · {note.body.count} characters", size: 12, color: .muted)
+      Row(gap: 10, align: .center, paddingTop: 8) {
+        for c in noteColors by c {
+          Row(width: 44, height: 44, align: .center, justify: .center, role: .button, label: "Color {c}", checked: note.color == c, onTap: { note.color = c }) {
+            Row(width: 28, height: 28, radius: 14, background: noteDot(c), border: note.color == c ? 3 : 0, borderColor: .text)
+          }
+        }
+      }
+      Row(gap: 8, paddingTop: 8) {
+        TwButton(note.pinned ? "Unpin" : "Pin", onTap: { note.pinned = !note.pinned }, variant: .secondary, grow: 1)
+        TwButton("Delete", onTap: onDelete, variant: .danger, grow: 1)
+      }
+    }
+  }
+}

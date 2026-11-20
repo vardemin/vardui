@@ -1,0 +1,11 @@
+@view Ledger
+expect "Thursday, 15 January"
+expect #spent "0.00"
+tap "Add 9.90"
+tap "Add 9.90"
+expect #spent "19.80"
+type "Notes" "Coffee twice\nbecause Monday"
+clock 2026-02-02 08:00
+restart
+expect "Monday, 2 February"
+expect #spent "0.00"

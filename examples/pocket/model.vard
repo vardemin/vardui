@@ -1,0 +1,154 @@
+// Pocket — notes, money, journal and calculators in one app.
+// Data model, seed data and pure helpers. Everything the app stores is a `pref`
+// (see app.vard), so it survives restarts on every platform and in `restart` tests.
+
+enum Tab { home, notes, money, journal, calc }
+
+// ---------------- notes ----------------
+struct Note { id: Int, title: String, body: String = "", pinned: Bool = false, color: String = "slate", updated: Int = 0 }
+
+const noteColors = ["slate", "amber", "emerald", "sky", "violet", "rose"]
+
+fn noteTint(name: String) -> Color {
+  if name == "amber" { return #FEF3C7 }
+  if name == "emerald" { return #D1FAE5 }
+  if name == "sky" { return #E0F2FE }
+  if name == "violet" { return #EDE9FE }
+  if name == "rose" { return #FFE4E6 }
+  return #F1F5F9
+}
+
+fn noteDot(name: String) -> Color {
+  if name == "amber" { return #F59E0B }
+  if name == "emerald" { return #10B981 }
+  if name == "sky" { return #0EA5E9 }
+  if name == "violet" { return #8B5CF6 }
+  if name == "rose" { return #F43F5E }
+  return #94A3B8
+}
+
+fn noteTitle(n: Note) -> String {
+  let t = n.title.trim()
+  if !t.isEmpty { return t }
+  let first = n.body.trim().split("\n").first ?? ""
+  return first.isEmpty ? "Untitled" : first
+}
+
+fn seedNotes(today: Int) -> [Note] {
+  return [
+    Note(id: 1, title: "Groceries", body: "Oat milk\nEggs\nAvocados\nSourdough bread\nCoffee beans", pinned: true, color: "amber", updated: addDays(today, -1)),
+    Note(id: 2, title: "Trip to Lisbon", body: "Book the tram 28 tour early in the morning. Try pastéis de nata at Manteigaria. Sunset at Miradouro da Senhora do Monte.", color: "sky", updated: addDays(today, -3)),
+    Note(id: 3, title: "Ideas", body: "A weekly money review every Sunday evening.\nRead one chapter before bed.", color: "violet", updated: addDays(today, -6)),
+  ]
+}
+
+// ---------------- money ----------------
+enum TxKind { expense, income }
+
+struct Tx { id: Int, amount: Float, kind: TxKind = .expense, category: String, note: String = "", date: Int }
+
+// color: bars and dots (500), soft: icon background (100), ink: icon letter (700)
+struct Category { name: String, letter: String, color: Color, soft: Color, ink: Color }
+
+const expenseCategories = [
+  Category(name: "Food", letter: "F", color: #F59E0B, soft: #FEF3C7, ink: #B45309),
+  Category(name: "Transport", letter: "T", color: #0EA5E9, soft: #E0F2FE, ink: #0369A1),
+  Category(name: "Home", letter: "H", color: #8B5CF6, soft: #EDE9FE, ink: #6D28D9),
+  Category(name: "Fun", letter: "U", color: #EC4899, soft: #FCE7F3, ink: #BE185D),
+  Category(name: "Health", letter: "+", color: #10B981, soft: #D1FAE5, ink: #047857),
+  Category(name: "Other", letter: "O", color: #64748B, soft: #F1F5F9, ink: #334155),
+]
+
+const incomeCategories = [
+  Category(name: "Salary", letter: "S", color: #10B981, soft: #D1FAE5, ink: #047857),
+  Category(name: "Freelance", letter: "W", color: #6366F1, soft: #E0E7FF, ink: #4338CA),
+  Category(name: "Gift", letter: "G", color: #EC4899, soft: #FCE7F3, ink: #BE185D),
+]
+
+fn category(name: String) -> Category {
+  return expenseCategories.find(c => c.name == name) ?? incomeCategories.find(c => c.name == name) ?? Category(name: name, letter: "?", color: #64748B, soft: #F1F5F9, ink: #334155)
+}
+
+fn signed(t: Tx) -> Float {
+  return t.kind == .income ? t.amount : 0 - t.amount
+}
+
+fn inMonth(t: Tx, month: Int) -> Bool {
+  let a = date(t.date)
+  let m = date(month)
+  return a.year == m.year && a.month == m.month
+}
+
+// "$1,234.50", "-$12.00", "1 234,50 ₽" — the symbol goes where the currency puts it
+fn money(x: Float, currency: String) -> String {
+  let s = x.abs().format(2)
+  let sign = x < 0 ? "-" : ""
+  if currency == "₽" || currency == "€" { return "{sign}{s} {currency}" }
+  return "{sign}{currency}{s}"
+}
+
+fn moneyShort(x: Float, currency: String) -> String {
+  let s = x.abs().format(0)
+  let sign = x < 0 ? "-" : ""
+  if currency == "₽" || currency == "€" { return "{sign}{s} {currency}" }
+  return "{sign}{currency}{s}"
+}
+
+fn seedTxs(today: Int) -> [Tx] {
+  let start = addMonths(today, 0)
+  return [
+    Tx(id: 1, amount: 3200, kind: .income, category: "Salary", note: "January salary", date: addDays(start, -10)),
+    Tx(id: 2, amount: 64.2, category: "Food", note: "Weekly groceries", date: addDays(start, -6)),
+    Tx(id: 3, amount: 12.5, category: "Transport", note: "Metro card", date: addDays(start, -5)),
+    Tx(id: 4, amount: 980, category: "Home", note: "Rent", date: addDays(start, -9)),
+    Tx(id: 5, amount: 38, category: "Fun", note: "Cinema", date: addDays(start, -3)),
+    Tx(id: 6, amount: 420, kind: .income, category: "Freelance", note: "Logo design", date: addDays(start, -2)),
+    Tx(id: 7, amount: 23.9, category: "Food", note: "Lunch with Ana", date: addDays(start, -1)),
+    Tx(id: 8, amount: 18, category: "Health", note: "Pharmacy", date: addDays(start, -1)),
+    Tx(id: 9, amount: 7.4, category: "Food", note: "Coffee", date: start),
+  ]
+}
+
+// ---------------- journal ----------------
+struct Entry { id: Int, date: Int, mood: Int, text: String }
+
+const moods = ["Awful", "Bad", "Okay", "Good", "Great"]
+
+fn moodColor(m: Int) -> Color {
+  if m == 1 { return #F43F5E }
+  if m == 2 { return #F97316 }
+  if m == 3 { return #F59E0B }
+  if m == 4 { return #84CC16 }
+  return #10B981
+}
+
+fn moodName(m: Int) -> String {
+  return moods[clamp(m, 1, 5) - 1]
+}
+
+// consecutive days with an entry, counting back from today (or from yesterday while today is still open)
+fn streak(entries: [Entry], today: Int) -> Int {
+  let days = entries.map(e => startOfDay(e.date))
+  let from = days.contains(startOfDay(today)) ? 0 : 1
+  for i in range(from, 400) {
+    if !days.contains(startOfDay(addDays(today, 0 - i))) { return i - from }
+  }
+  return 400
+}
+
+fn seedEntries(today: Int) -> [Entry] {
+  return [
+    Entry(id: 1, date: addDays(today, -1), mood: 4, text: "Long walk by the river after work. Finally finished the book I started in December."),
+    Entry(id: 2, date: addDays(today, -2), mood: 3, text: "Busy day, too many meetings. Cooked a new pasta recipe in the evening."),
+    Entry(id: 3, date: addDays(today, -3), mood: 5, text: "Got the freelance project approved! Celebrated with friends."),
+    Entry(id: 4, date: addDays(today, -5), mood: 2, text: "Slept badly and skipped the gym."),
+  ]
+}
+
+fn greeting(ms: Int) -> String {
+  let h = date(ms).hour
+  if h < 5 { return "Good night" }
+  if h < 12 { return "Good morning" }
+  if h < 18 { return "Good afternoon" }
+  return "Good evening"
+}

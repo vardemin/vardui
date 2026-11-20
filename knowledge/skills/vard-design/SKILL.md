@@ -39,4 +39,8 @@ Text: `size` `weight: .thin...black` `lineHeight` `letterSpacing` `italic` `unde
 - Edge-to-edge hero: `Column(safeArea: .top, gradient: [...])` paints under the status bar.
 - Responsive: `Grid(columns: screenWidth >= 600 ? 4 : 2)`.
 
-Worked example: examples/showcase (Tailwind dashboard, tested in tests/showcase.vtest).
+Ready components in `tailwind`: TwButton TwCard Badge Avatar Field TextArea Segmented Chip
+Progress IconButton (`vard doc tailwind`); bottom sheets and charts: `vard doc design`.
+
+Worked examples: examples/showcase (Tailwind dashboard, tests/showcase.vtest) and
+examples/pocket (notes, money tracker, journal, calculators: tabs, sheets, charts, prefs).

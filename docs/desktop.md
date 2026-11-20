@@ -22,7 +22,7 @@ folder onto the window opens that project instead.
 |---|---|
 | Drawing | winit window + `vard-gpu` on the platform's GPU API; redraws only after events, and on every frame while animations run |
 | Mouse | click → `tap`, drag → scroll, wheel/trackpad → scroll, the back mouse button → `back` |
-| Text input | the host edits Input text: typing, IME commits, Backspace, Enter = `onSubmit`, Tab = next field, a blinking caret drawn by the renderer |
+| Text input | the host edits Input text: typing, IME commits, Backspace, Enter = `onSubmit` (a newline in a multi-line `Input`, where Shift+Enter submits), Tab = next field, a blinking caret drawn by the renderer |
 | Keys | Esc leaves the field, or goes `back` while an `on back` handler is enabled; arrows / PageUp / PageDown scroll |
 | Theme, language | the window theme → `isDark` (and the app's `setColorScheme` sets the window theme); `LANG` → `locale` |
 | Lifecycle | window focus → `appResume` / `appPause` |

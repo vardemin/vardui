@@ -27,9 +27,10 @@ actions (one per line, or separated by `;`):
   find SEL             print the matching element's line
   state                dump all `state` variables by view
   expect SEL|\"text\"    fail unless present;   expect no \"text\"   fail if present
-  expect SEL checked|unchecked|enabled|disabled|offscreen|visible
+  expect SEL checked|unchecked|enabled|disabled|offscreen|visible   expect SEL \"text\"  (its text contains it)
   theme light|dark     switch the system theme        size W H    resize the screen
   locale TAG           the user's language (en, ru, pt-BR): t() texts follow it
+  clock 2026-03-01 [10:30] | clock +3d|+2h|+15m   set or move what now() returns (default 2026-01-15 09:30)
   insets T B [L R]     system bar/cutout insets in dp     keyboard H   show the keyboard (0 hides)
   mock NAME VALUE      `extern fn NAME` returns VALUE (JSON or bare word) and its callbacks receive it
   resolve NAME VALUE   complete the oldest pending call of NAME (callback extern without a mock)
@@ -91,7 +92,14 @@ impl Runtime {
         let (bind, on_change, span) = (n.bind, n.on_change.clone(), n.src);
         match bind {
             Some((expr, sc)) => self.assign(&p, expr, sc, Value::str(text)),
-            None => self.nodes[input].text = text.into(),
+            None => {
+                let n = &mut self.nodes[input];
+                n.text = text.into();
+                if n.multiline() {
+                    n.wrap_key = None;
+                    self.layout_dirty = true;
+                }
+            }
         }
         if let Some(h) = on_change {
             self.call_func(&p, &h, vec![Some(Value::str(text))], span);
@@ -240,6 +248,35 @@ impl Runtime {
                     _ => return Err("usage: theme light|dark".into()),
                 }
                 Ok(ActionOut::Text(String::new()))
+            }
+            "clock" => {
+                const USAGE: &str = "usage: clock 2026-03-01 [10:30]  |  clock +3d / +2h / +15m / -1d";
+                let a = toks.get(1).ok_or(USAGE)?;
+                let cur = self.sim.now();
+                let next = if a.starts_with('+') || a.starts_with('-') {
+                    let (num, unit) = a.split_at(a.len() - 1);
+                    let n: i64 = num.parse().map_err(|_| USAGE.to_string())?;
+                    match unit {
+                        "d" => cur + n * crate::stdlib::DAY_MS,
+                        "h" => cur + n * 3_600_000,
+                        "m" => cur + n * 60_000,
+                        _ => return Err(USAGE.into()),
+                    }
+                } else {
+                    let ymd: Vec<i64> = a.split('-').map(|x| x.parse().map_err(|_| USAGE.to_string())).collect::<Result<_, _>>()?;
+                    let [y, mo, d] = ymd[..] else { return Err(USAGE.into()) };
+                    let (h, mi) = match toks.get(2) {
+                        Some(t) => {
+                            let (h, m) = t.split_once(':').ok_or(USAGE)?;
+                            (h.parse().map_err(|_| USAGE.to_string())?, m.parse().map_err(|_| USAGE.to_string())?)
+                        }
+                        None => (0, 0),
+                    };
+                    crate::stdlib::date_of(y, mo, d, h, mi)
+                };
+                self.sim.clock = Some(next);
+                Ok(ActionOut::Text(format!("now() = {}
+", crate::stdlib::format_date(next, "yyyy-MM-dd HH:mm EEE", "en"))))
             }
             "locale" => {
                 let tag = toks.get(1).ok_or("usage: locale TAG (e.g. locale ru)")?;
@@ -419,7 +456,7 @@ impl Runtime {
     }
 
     fn expect(&mut self, toks: &[String]) -> Result<ActionOut, String> {
-        let a = toks.get(1).ok_or("usage: expect SEL|\"text\"  |  expect no \"text\"  |  expect SEL checked")?;
+        let a = toks.get(1).ok_or("usage: expect SEL|\"text\"  |  expect no \"text\"  |  expect SEL checked  |  expect SEL \"text\"")?;
         if a == "no" {
             let t = toks.get(2).ok_or("usage: expect no \"text\"")?;
             if self.has_text(t) || ((t.starts_with('@') || t.starts_with('#')) && self.find(t).is_ok()) {
@@ -444,7 +481,17 @@ impl Runtime {
             "disabled" => !n.enabled,
             "offscreen" => !visible,
             "visible" => visible,
-            other => return Err(format!("unknown expectation `{}`; use checked|unchecked|enabled|disabled|offscreen|visible", other)),
+            // `expect #total "$42.00"`: the element's text (label, or an Input's value) contains it
+            text => {
+                let shown = if n.kind == crate::node::Kind::Input { crate::inspect::plain(&n.text) } else { self.label_of(k) };
+                if shown.to_lowercase().contains(&crate::inspect::plain(text).to_lowercase()) {
+                    return Ok(ActionOut::Text(String::new()));
+                }
+                return Err(format!(
+                    "expected {} to show {:?}, but it shows {:?} (flags: checked|unchecked|enabled|disabled|offscreen|visible)",
+                    a, text, shown
+                ));
+            }
         };
         if ok {
             Ok(ActionOut::Text(String::new()))

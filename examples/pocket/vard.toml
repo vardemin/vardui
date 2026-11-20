@@ -1,0 +1,5 @@
+[app]
+name = "pocket"
+
+[dependencies]
+tailwind = { path = "../../packages/tailwind" }

@@ -1,0 +1,155 @@
+// Money: month overview, budget, spending by category, last 7 days and transactions
+// grouped by day. New transactions come from a bottom sheet (AddTxSheet).
+
+view MoneyScreen(txs: [Tx], today: Int, budget: Float, currency: String, onAdd: fn(), onDelete: fn(Int)) {
+  state month = 0
+  state filter = "All"
+  let shownMonth = addMonths(today, month)
+  let monthTxs = txs.filter(t => inMonth(t, shownMonth))
+  let income = monthTxs.filter(t => t.kind == .income).map(t => t.amount).sum()
+  let spent = monthTxs.filter(t => t.kind == .expense).map(t => t.amount).sum()
+  let listed = monthTxs.filter(t => filter == "All" || (filter == "Income") == (t.kind == .income)).sortedBy(t => t.date).reversed()
+  let days = listed.map(t => startOfDay(t.date)).distinct()
+  let byCategory = expenseCategories.map(c => monthTxs.filter(t => t.kind == .expense && t.category == c.name).map(t => t.amount).sum())
+  let week = range(0, 7).map(i => txs.filter(t => t.kind == .expense && startOfDay(t.date) == startOfDay(addDays(today, i - 6))).map(t => t.amount).sum())
+
+  Column(grow: 1) {
+    ScreenHeader("Money", subtitle: "Tracker", action: "+", actionLabel: "Add transaction", onAction: onAdd)
+    Scroll(grow: 1, paddingX: 20, paddingBottom: 24, gap: 16) {
+      Row(align: .center, gap: 8) {
+        TwButton("‹", onTap: { month -= 1 }, variant: .secondary, size: .sm)
+        Text(formatDate(shownMonth, "MMMM yyyy"), size: 15, weight: .semibold, textAlign: .center, grow: 1, id: "month")
+        TwButton("›", onTap: { month += 1 }, variant: .secondary, size: .sm, enabled: month < 0)
+      }
+      // balance card: bg-gradient-to-br from-slate-900 to-indigo-900
+      Column(padding: 20, gap: 14, radius: 20, gradient: [#0F172A, #312E81], gradientAngle: 135, shadow: .lg, shadowColor: #312E8155) {
+        Text("BALANCE", size: 12, weight: .semibold, letterSpacing: 1.4, color: #A5B4FC)
+        Text(money(income - spent, currency), size: 32, weight: .bold, letterSpacing: -0.8, color: #FFFFFF, id: "balance")
+        Row(gap: 12) {
+          Column(grow: 1, gap: 2) {
+            Text("↓ Income", size: 12, color: #A5B4FC)
+            Text(money(income, currency), size: 15, weight: .semibold, color: #6EE7B7)
+          }
+          Column(grow: 1, gap: 2) {
+            Text("↑ Spent", size: 12, color: #A5B4FC)
+            Text(money(spent, currency), size: 15, weight: .semibold, color: #FDA4AF)
+          }
+        }
+      }
+      TwCard {
+        Row(align: .center) {
+          Text("Monthly budget", size: 14, weight: .semibold, grow: 1)
+          Badge(spent > budget ? "Over budget" : "{(spent * 100 / max(1.0, budget)).round()}% used", tone: spent > budget ? .red : spent > budget * 0.8 ? .amber : .green)
+        }
+        Progress(value: spent / max(1.0, budget), color: spent > budget ? .rose500 : .primary)
+        Text(spent > budget ? "{money(spent - budget, currency)} over {money(budget, currency)}" : "{money(budget - spent, currency)} left of {money(budget, currency)}", size: 13, color: .muted)
+      }
+      if spent > 0 {
+        TwCard {
+          Text("Where it went", size: 14, weight: .semibold)
+          for c, i in expenseCategories by c.name {
+            if byCategory[i] > 0 {
+              Row(gap: 12, align: .center) {
+                CategoryIcon(c: c, size: 32)
+                Column(grow: 1, gap: 6) {
+                  Row {
+                    Text(c.name, size: 14, weight: .medium, grow: 1)
+                    Text(money(byCategory[i], currency), size: 14, weight: .semibold)
+                  }
+                  Progress(value: byCategory[i] / spent, color: c.color, height: 6)
+                }
+              }
+            }
+          }
+        }
+      }
+      if month == 0 {
+        TwCard {
+          Row(align: .center) {
+            Text("Last 7 days", size: 14, weight: .semibold, grow: 1)
+            Text(moneyShort(week.sum(), currency), size: 14, weight: .semibold, color: .muted)
+          }
+          BarChart(values: week, labels: range(0, 7).map(i => formatDate(addDays(today, i - 6), "EEE")), highlight: 6, height: 96)
+        }
+      }
+      Segmented(options: ["All", "Spent", "Income"], selected: filter)
+      for d in days by d {
+        Column(gap: 4) {
+          Row(paddingTop: 4) {
+            Text(daysBetween(d, today) == 0 ? "Today" : daysBetween(d, today) == 1 ? "Yesterday" : formatDate(d, "EEEE, d MMM"), size: 13, weight: .semibold, color: .muted, grow: 1)
+            Text(money(listed.filter(t => startOfDay(t.date) == d).map(t => signed(t)).sum(), currency), size: 13, weight: .medium, color: .muted)
+          }
+          for t in listed.filter(x => startOfDay(x.date) == d) by t.id {
+            TxRow(tx: t, currency: currency, onDelete: { onDelete(t.id) })
+          }
+        }
+      }
+      if listed.isEmpty {
+        EmptyState(icon: "◔", title: "No transactions", hint: "Tap + to add income or an expense.")
+      }
+    }
+  }
+}
+
+view TxRow(tx: Tx, currency: String, onDelete: fn()) {
+  state open = false
+  Column(radius: 14, background: .card, border: 1, borderColor: .ring, clip: true) {
+    Row(gap: 12, padding: 12, align: .center, role: .button, label: "{tx.category} {tx.note}", onTap: { open = !open }) {
+      CategoryIcon(c: category(tx.category))
+      Column(grow: 1, gap: 2) {
+        Text(tx.note == "" ? tx.category : tx.note, size: 15, weight: .medium, maxLines: 1)
+        Text("{tx.category} · {formatDate(tx.date, "HH:mm")}", size: 12, color: .muted)
+      }
+      Text(money(signed(tx), currency), size: 15, weight: .semibold, color: tx.kind == .income ? .success : .text)
+    }
+    if open {
+      Row(paddingX: 12, paddingBottom: 12, gap: 8, enter: .slideDown) {
+        TwButton("Delete", onTap: onDelete, variant: .danger, size: .sm, grow: 1)
+        TwButton("Close", onTap: { open = false }, variant: .secondary, size: .sm, grow: 1)
+      }
+    }
+  }
+}
+
+// Bottom sheet: amount, kind, category, note and day.
+view AddTxSheet(today: Int, currency: String, onClose: fn(), onSave: fn(Tx)) {
+  state amount = ""
+  state kind = "Expense"
+  state cat = "Food"
+  state note = ""
+  state dayOffset = 0
+  let value = amount.replace(",", ".").toFloat() ?? 0.0
+  let cats = kind == "Expense" ? expenseCategories : incomeCategories
+  let valid = value > 0 && cats.any(c => c.name == cat)
+
+  fn save() {
+    onSave(Tx(id: 0, amount: value, kind: kind == "Income" ? .income : .expense, category: cat, note: note.trim(), date: addDays(today, dayOffset)))
+  }
+
+  Column(grow: 1, background: #0F172A66, enter: .fade, duration: 150) {
+    Column(grow: 1, role: .button, label: "Close sheet", onTap: onClose)
+    Column(safeArea: .bottom, padding: 20, gap: 14, background: .background, radiusTopLeft: 24, radiusTopRight: 24, shadow: .xl, enter: .slideUp) {
+      Row(align: .center) {
+        Text("New transaction", size: 18, weight: .bold, grow: 1, role: .heading)
+        IconButton("✕", label: "Close", onTap: onClose)
+      }
+      Segmented(options: ["Expense", "Income"], selected: kind)
+      Row(gap: 8, align: .center, paddingX: 14, height: 64, radius: 14, background: .ring) {
+        Text(currency, size: 26, weight: .bold, color: .muted)
+        Input(value: amount, placeholder: "0.00", keyboard: .number, size: 28, weight: .bold, border: 0, paddingX: 0, background: .clear, grow: 1, id: "amount", onSubmit: { if valid { save() } })
+      }
+      Row(wrap: true, gap: 6) {
+        for c in cats by c.name {
+          Chip(c.name, selected: cat == c.name, onTap: { cat = c.name })
+        }
+      }
+      Field("Note", value: note, placeholder: kind == "Expense" ? "What was it?" : "From whom?")
+      Row(align: .center, gap: 8) {
+        TwButton("‹", onTap: { dayOffset -= 1 }, variant: .secondary, size: .sm)
+        Text(dayOffset == 0 ? "Today" : dayOffset == -1 ? "Yesterday" : formatDate(addDays(today, dayOffset), "EEE, d MMM"), size: 14, weight: .medium, textAlign: .center, grow: 1, id: "day")
+        TwButton("›", onTap: { dayOffset += 1 }, variant: .secondary, size: .sm, enabled: dayOffset < 0)
+      }
+      TwButton(valid ? "Add {money(kind == "Income" ? value : 0 - value, currency)}" : "Add", onTap: save, size: .lg, enabled: valid)
+    }
+  }
+}

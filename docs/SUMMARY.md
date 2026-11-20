@@ -16,6 +16,7 @@
 - [Testing and debugging](testing.md)
 - [Tooling: CLI and MCP](tooling.md)
 - [Diagnostics](diagnostics.md)
+- [Showcase: Pocket](pocket.md)
 
 # Packages
 

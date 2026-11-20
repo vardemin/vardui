@@ -32,6 +32,8 @@ function stdModules(engine) {
     return { granted: "granted", denied: "blocked", prompt: "notDetermined" }[known[p]] || (permissionNames[p] ? "notDetermined" : "denied");
   };
   return {
+    // local wall-clock milliseconds (the zone offset is applied here)
+    now: () => Date.now() - new Date().getTimezoneOffset() * 60000,
     prefGet: ([k]) => store.getItem("vard.pref:" + k),
     prefSet: ([k, v]) => store.setItem("vard.pref:" + k, v),
     prefRemove: ([k]) => store.removeItem("vard.pref:" + k),
@@ -143,18 +145,24 @@ export async function start(root, { base = "./app/", view = null, modules = {} }
     for (const r of list) {
       seen.add(r.uid);
       let el = inputs.get(r.uid);
+      // a multi-line Input (`lines` > 1) is a <textarea>: Enter is a newline, Shift+Enter submits
+      const tag = r.multiline ? "TEXTAREA" : "INPUT";
+      if (el && el.tagName !== tag) { el.remove(); inputs.delete(r.uid); el = null; }
       if (!el) {
-        el = document.createElement("input");
-        el.style.cssText = "position:absolute;border:0;outline:0;background:transparent;padding:0;margin:0";
+        el = document.createElement(tag.toLowerCase());
+        el.style.cssText = "position:absolute;border:0;outline:0;background:transparent;padding:0;margin:0;resize:none";
         el.addEventListener("input", () => { el.sent = el.value; app.inputText(r.uid, el.value); frame(); });
         el.addEventListener("focus", () => { app.focus(r.uid); frame(); });
         el.addEventListener("blur", () => { app.focus(0); frame(); });
-        el.addEventListener("keydown", (e) => { if (e.key === "Enter") { app.submit(r.uid); frame(); } });
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (el.tagName === "INPUT" || e.shiftKey)) { e.preventDefault(); app.submit(r.uid); frame(); }
+        });
         root.appendChild(el);
         inputs.set(r.uid, el);
       }
       const type = r.secure ? "password" : r.keyboard;
-      if (el.type !== type) el.type = type;
+      if (el.tagName === "INPUT" && el.type !== type) el.type = type;
+      if (el.tagName === "TEXTAREA") el.inputMode = { tel: "tel", number: "decimal", email: "email", url: "url" }[r.keyboard] || "text";
       // the app may rewrite the text itself (clear on submit, formatting): that wins
       if (el.value !== r.text && (document.activeElement !== el || r.text !== el.sent)) el.value = el.sent = r.text;
       el.placeholder = r.placeholder;
@@ -162,7 +170,7 @@ export async function start(root, { base = "./app/", view = null, modules = {} }
       Object.assign(el.style, {
         left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px",
         color: r.color, font: `${r.weight} ${r.fontPx}px ${r.font ? `"${r.font}", ` : ""}system-ui, sans-serif`,
-        textAlign: r.align, opacity: r.opacity, letterSpacing: r.letterSpacing + "px",
+        lineHeight: r.lineHeight + "px", textAlign: r.align, opacity: r.opacity, letterSpacing: r.letterSpacing + "px",
         clipPath: `inset(${Math.max(0, r.clip[1] - r.y)}px ${Math.max(0, r.x + r.w - r.clip[0] - r.clip[2])}px ${Math.max(0, r.y + r.h - r.clip[1] - r.clip[3])}px ${Math.max(0, r.clip[0] - r.x)}px)`,
       });
       el.style.setProperty("--ph", r.placeholderColor);
@@ -170,7 +178,7 @@ export async function start(root, { base = "./app/", view = null, modules = {} }
     for (const [uid, el] of inputs) if (!seen.has(uid)) { el.remove(); inputs.delete(uid); }
   }
   const style = document.createElement("style");
-  style.textContent = "input::placeholder{color:var(--ph)}";
+  style.textContent = "input::placeholder,textarea::placeholder{color:var(--ph)}";
   document.head.appendChild(style);
 
   // ---- pointer: tap, or drag to scroll (with momentum)

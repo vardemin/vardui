@@ -1,0 +1,201 @@
+// Financial calculators: loan payment, compound savings, time to a goal, 50/30/20 budget.
+// Pure math with pow/log; every result recomputes as you type.
+
+fn num(s: String) -> Float {
+  return s.replace(",", ".").replace(" ", "").toFloat() ?? 0.0
+}
+
+// monthly annuity payment for `principal` at `annual`% over `months`
+fn payment(principal: Float, annual: Float, months: Int) -> Float {
+  if months <= 0 { return 0.0 }
+  let r = annual / 100 / 12
+  if r == 0 { return principal / months }
+  return principal * r / (1 - pow(1 + r, 0 - months))
+}
+
+// balance after `months` of monthly compounding with a monthly deposit
+fn futureValue(start: Float, monthly: Float, annual: Float, months: Int) -> Float {
+  let r = annual / 100 / 12
+  if r == 0 { return start + monthly * months }
+  let g = pow(1 + r, months)
+  return start * g + monthly * (g - 1) / r
+}
+
+// months until `saved` grows to `target` with `monthly` deposits; -1 = never
+fn monthsToGoal(target: Float, saved: Float, monthly: Float, annual: Float) -> Int {
+  if saved >= target { return 0 }
+  let r = annual / 100 / 12
+  if r == 0 { return monthly <= 0 ? -1 : ((target - saved) / monthly).ceil() }
+  if monthly <= 0 && saved <= 0 { return -1 }
+  return (log((target * r + monthly) / (saved * r + monthly)) / log(1 + r)).ceil()
+}
+
+fn duration(months: Int) -> String {
+  let y = months / 12
+  let m = months % 12
+  let ys = y == 1 ? "1 year" : "{y} years"
+  let ms = m == 1 ? "1 month" : "{m} months"
+  if y == 0 { return ms }
+  if m == 0 { return ys }
+  return "{ys} {ms}"
+}
+
+view CalcScreen(today: Int, currency: String) {
+  state kind = "Loan"
+  Column(grow: 1) {
+    ScreenHeader("Calculators", subtitle: "Plan ahead")
+    Scroll(grow: 1, paddingX: 20, paddingBottom: 24, gap: 16) {
+      Segmented(options: ["Loan", "Savings", "Goal", "Budget"], selected: kind)
+      if kind == "Loan" {
+        LoanCalc(currency: currency)
+      } else if kind == "Savings" {
+        SavingsCalc(currency: currency)
+      } else if kind == "Goal" {
+        GoalCalc(today: today, currency: currency)
+      } else {
+        BudgetCalc(currency: currency)
+      }
+    }
+  }
+}
+
+view ResultCard(label: String, value: String, note: String = "") {
+  Column(padding: 20, gap: 4, radius: 20, gradient: [#4F46E5, #7C3AED], gradientAngle: 135, shadow: .lg, shadowColor: #4F46E555, enter: .fade) {
+    Text(label.upper(), size: 12, weight: .semibold, letterSpacing: 1.4, color: #E0E7FF)
+    Text(value, size: 34, weight: .bold, letterSpacing: -1, color: #FFFFFF, id: "result")
+    if note != "" { Text(note, size: 13, color: #E0E7FF) }
+  }
+}
+
+view LoanCalc(currency: String) {
+  state amount = "250000"
+  state rate = "6.5"
+  state years = "30"
+  let n = (num(years) * 12).round()
+  let pay = payment(num(amount), num(rate), n)
+  let total = pay * n
+  let interest = max(0.0, total - num(amount))
+
+  Column(gap: 16) {
+    ResultCard(label: "Monthly payment", value: money(pay, currency), note: "{n} payments")
+    TwCard {
+      Field("Loan amount", value: amount, placeholder: "250000", keyboard: .number)
+      Row(gap: 12) {
+        Field("Rate, % a year", value: rate, placeholder: "6.5", keyboard: .number, grow: 1)
+        Field("Term, years", value: years, placeholder: "30", keyboard: .number, grow: 1)
+      }
+    }
+    TwCard {
+      Row(gap: 12) {
+        StatTile(label: "Total paid", value: moneyShort(total, currency))
+        StatTile(label: "Interest", value: moneyShort(interest, currency), tone: .rose600)
+      }
+      Progress(value: total > 0 ? num(amount) / total : 0.0, color: .primary, height: 10)
+      Row(gap: 16) {
+        Row(gap: 6, align: .center) {
+          Column(width: 10, height: 10, radius: 5, background: .primary)
+          Text("Principal {(total > 0 ? num(amount) * 100 / total : 0.0).round()}%", size: 12, color: .muted)
+        }
+        Row(gap: 6, align: .center) {
+          Column(width: 10, height: 10, radius: 5, background: .ring)
+          Text("Interest {(total > 0 ? interest * 100 / total : 0.0).round()}%", size: 12, color: .muted)
+        }
+      }
+    }
+  }
+}
+
+view SavingsCalc(currency: String) {
+  state start = "1000"
+  state monthly = "200"
+  state rate = "7"
+  state years = "10"
+  let n = (num(years) * 12).round()
+  let fv = futureValue(num(start), num(monthly), num(rate), n)
+  let paidIn = num(start) + num(monthly) * n
+  let steps = range(1, 6).map(k => futureValue(num(start), num(monthly), num(rate), n * k / 5))
+
+  Column(gap: 16) {
+    ResultCard(label: "In {duration(n)}", value: money(fv, currency), note: "{moneyShort(max(0.0, fv - paidIn), currency)} of it is interest")
+    TwCard {
+      Row(gap: 12) {
+        Field("Start with", value: start, keyboard: .number, grow: 1)
+        Field("Every month", value: monthly, keyboard: .number, grow: 1)
+      }
+      Row(gap: 12) {
+        Field("Return, % a year", value: rate, keyboard: .number, grow: 1)
+        Field("Years", value: years, keyboard: .number, grow: 1)
+      }
+    }
+    TwCard {
+      Text("Growth", size: 14, weight: .semibold)
+      BarChart(values: steps, labels: range(1, 6).map(k => "{(num(years) * k / 5).fixed(num(years) * k % 5 == 0 ? 0 : 1)}y"), highlight: 4, height: 110)
+      Row(gap: 12) {
+        StatTile(label: "You put in", value: moneyShort(paidIn, currency))
+        StatTile(label: "Interest", value: moneyShort(max(0.0, fv - paidIn), currency), tone: .emerald600)
+      }
+    }
+  }
+}
+
+view GoalCalc(today: Int, currency: String) {
+  state target = "10000"
+  state saved = "1500"
+  state monthly = "300"
+  state rate = "4"
+  let months = monthsToGoal(num(target), num(saved), num(monthly), num(rate))
+
+  Column(gap: 16) {
+    if months < 0 {
+      ResultCard(label: "Time to goal", value: "Never", note: "Add a monthly amount to get there.")
+    } else if months == 0 {
+      ResultCard(label: "Time to goal", value: "Done!", note: "You already have enough saved.")
+    } else {
+      ResultCard(label: "Time to goal", value: duration(months), note: "Around {formatDate(addMonths(today, months), "MMMM yyyy")}")
+    }
+    TwCard {
+      Field("Goal", value: target, keyboard: .number, id: "goal-target")
+      Row(gap: 12) {
+        Field("Saved now", value: saved, keyboard: .number, grow: 1, id: "goal-saved")
+        Field("Every month", value: monthly, keyboard: .number, grow: 1, id: "goal-monthly")
+      }
+      Field("Return, % a year", value: rate, keyboard: .number, id: "goal-rate")
+    }
+    TwCard {
+      Row {
+        Text("Progress", size: 14, weight: .semibold, grow: 1)
+        Text("{(clamp(num(saved) / max(1.0, num(target)), 0.0, 1.0) * 100).round()}%", size: 14, weight: .semibold, color: .primary)
+      }
+      Progress(value: num(saved) / max(1.0, num(target)), height: 10)
+      Text("{money(num(saved), currency)} of {money(num(target), currency)}", size: 13, color: .muted)
+    }
+  }
+}
+
+view BudgetCalc(currency: String) {
+  state income = "3000"
+  let total = num(income)
+  Column(gap: 16) {
+    ResultCard(label: "Save every month", value: money(total * 0.2, currency), note: "The 50/30/20 rule")
+    TwCard {
+      Field("Monthly income after tax", value: income, keyboard: .number, id: "income")
+    }
+    TwCard {
+      BudgetLine(label: "Needs", hint: "Rent, bills, groceries", share: 0.5, total: total, color: .sky500, currency: currency)
+      BudgetLine(label: "Wants", hint: "Eating out, hobbies, trips", share: 0.3, total: total, color: .fuchsia500, currency: currency)
+      BudgetLine(label: "Savings", hint: "Emergency fund, investing", share: 0.2, total: total, color: .emerald500, currency: currency)
+    }
+  }
+}
+
+view BudgetLine(label: String, hint: String, share: Float, total: Float, color: Color, currency: String) {
+  Column(gap: 6, paddingY: 4) {
+    Row(align: .center, gap: 8) {
+      Column(width: 10, height: 10, radius: 5, background: color)
+      Text("{label} · {(share * 100).round()}%", size: 14, weight: .semibold, grow: 1)
+      Text(money(total * share, currency), size: 14, weight: .semibold)
+    }
+    Progress(value: share, color: color, height: 6)
+    Text(hint, size: 12, color: .muted)
+  }
+}

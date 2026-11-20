@@ -1,0 +1,25 @@
+# Write today's entry: the streak grows; the next day it waits for a new entry
+tap #tab-journal
+expect "3 days"
+expect "How was your day?"
+tap "Write today's entry"
+expect "Save" disabled
+tap "Great"
+expect "Great" checked
+type "Write a few lines…" "Shipped the release. Dinner with the team."
+expect "7 words"
+expect "Save" enabled
+tap "Save"
+expect #tab-journal checked
+expect "4 days"
+expect no "How was your day?"
+expect "Shipped the release"
+clock +1d
+restart
+tap #tab-journal
+expect "4 days"
+expect "How was your day?"
+clock +2d
+restart
+tap #tab-journal
+expect "0 days"

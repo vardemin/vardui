@@ -13,11 +13,16 @@ text-sm = size: 14, font-semibold = weight: .semibold): `vard doc design`.
 TwCard {
   Text("Plan", size: 14, weight: .semibold)
   Badge("Active", tone: .green)
-  Field("Email", value: email, placeholder: "you@example.com")
+  Field("Email", value: email, placeholder: "you@example.com")   // keyboard: .number .email ...
+  TextArea("Notes", value: body, placeholder: "Write…", lines: 5)  // multi-line Input
   TwButton("Save", onTap: save)                       // variant: .primary .secondary .soft .outline .ghost .danger
   TwButton("Cancel", variant: .ghost, size: .sm)      // size: .sm .md .lg (touch target stays 44dp)
 }
 Avatar("LA", size: 40, color: .indigo600)
+Segmented(options: ["Expense", "Income"], selected: kind)   // bind String; 44dp segments
+Chip("Food", selected: cat == "Food", onTap: { cat = "Food" }) // filter pill, 44dp target
+Progress(value: spent / budget, color: .rose500)             // 0..1 bar (clamped), height: 8
+IconButton("+", label: "Add note", onTap: add, variant: .primary)  // glyph icon, round
 ```
 
 Headless: nothing to mock (no platform calls). Components carry `role`/`label`, so tests

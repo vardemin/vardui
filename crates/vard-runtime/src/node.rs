@@ -159,6 +159,10 @@ pub struct Node {
     pub placeholder_color: Option<u32>,
     pub secure: bool,
     pub keyboard: u8,
+    /// Input: visible text lines (> 1 = multi-line)
+    pub input_lines: usize,
+    /// `height` was set by the app (a multi-line Input otherwise sizes to its `lines`)
+    pub height_set: bool,
     pub fit: u8,
     pub tint: Option<u32>,
     // semantics
@@ -267,6 +271,8 @@ impl Node {
             placeholder_color: None,
             secure: false,
             keyboard: 0,
+            input_lines: 1,
+            height_set: false,
             fit: 0,
             tint: None,
             id: None,
@@ -307,7 +313,7 @@ impl Node {
     /// Resolved padding: [left, top, right, bottom] (including `safeArea` insets).
     pub fn pad(&self) -> [f32; 4] {
         let x = self.p_x.unwrap_or(self.p_all);
-        let y = self.p_y.unwrap_or(self.p_all);
+        let y = self.p_y.unwrap_or(if self.multiline() && self.p_all == 0.0 { 10.0 } else { self.p_all });
         let s = self.safe_pad;
         [
             self.p_side[0].unwrap_or(x) + s[0],
@@ -315,6 +321,11 @@ impl Node {
             self.p_side[2].unwrap_or(x) + s[2],
             self.p_side[3].unwrap_or(y) + s[3],
         ]
+    }
+
+    /// A multi-line Input (`lines: N`, N > 1).
+    pub fn multiline(&self) -> bool {
+        self.kind == Kind::Input && self.input_lines > 1
     }
 
     /// (font px, bold, line height); `bold` = weight >= 600 (the reference engine has two weights).
@@ -372,12 +383,15 @@ impl Node {
             Value::Func(_) => Some(v.clone()),
             _ => None,
         };
-        if matches!(name, "text" | "style" | "size" | "weight" | "maxLines" | "font" | "letterSpacing" | "italic") {
+        if matches!(name, "text" | "value" | "placeholder" | "lines" | "style" | "size" | "weight" | "maxLines" | "font" | "letterSpacing" | "italic") {
             self.wrap_key = None;
         }
         match name {
             "width" => self.width = f,
-            "height" => self.height = f,
+            "height" => {
+                self.height = f;
+                self.height_set = f.is_some();
+            }
             "minWidth" => self.min_w = f.unwrap_or(0.0),
             "minHeight" => self.min_h = f.unwrap_or(0.0),
             "maxWidth" => self.max_w = f,
@@ -469,6 +483,12 @@ impl Node {
             "placeholderColor" => self.placeholder_color = color,
             "secure" => self.secure = v.truthy(),
             "keyboard" => self.keyboard = enum_variants("Keyboard").and_then(|vs| vs.iter().position(|x| *x == en)).unwrap_or(0) as u8,
+            "lines" => {
+                self.input_lines = match v {
+                    Value::Int(i) if *i > 1 => (*i).min(1000) as usize,
+                    _ => 1,
+                }
+            }
             "fit" => self.fit = enum_variants("Fit").and_then(|vs| vs.iter().position(|x| *x == en)).unwrap_or(0) as u8,
             "tint" => self.tint = color,
             "id" => self.id = Some(s()),

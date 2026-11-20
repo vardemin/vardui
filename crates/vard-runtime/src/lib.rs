@@ -15,6 +15,7 @@ pub mod native;
 pub mod node;
 pub mod raster;
 pub mod rt;
+pub mod stdlib;
 pub mod text;
 pub mod value;
 

@@ -65,6 +65,27 @@ callback (`extern fn load(done: fn([Item]))`), platform events are `on name(x) {
 (`on appear`, `on back`, `on pushOpened(m)`), settings that must survive restarts are
 `pref name = default`. Full guide: skill vard-native / `vard doc native`.
 
+Dates, money and long text (diary, finance, notes screens):
+```
+struct Tx { id: Int, amount: Float, date: Int }
+view Ledger {
+  pref txs: [Tx] = []
+  state today = now()
+  state memo = ""
+  let month = txs.filter(t => date(t.date).month == date(today).month)
+  on appResume { today = now() }
+  Column(gap: 8, padding: 16) {
+    Text(formatDate(today, "EEEE, d MMMM"))
+    Text("Spent {month.map(t => t.amount).sum().format(2)}", id: "spent")
+    Input(value: memo, placeholder: "Notes", lines: 4)
+    Button("Add 9.90", onTap: { txs.append(Tx(id: txs.count + 1, amount: 9.9, date: now())) })
+  }
+}
+```
+Also: `addDays/addMonths/startOfDay/daysBetween`, `pow/log` for finance math, `list.max()`,
+`distinct()` (group by day: `txs.map(t => startOfDay(t.date)).distinct()`). Test with
+`clock 2026-02-01 09:00` / `clock +1d` and `expect #spent "9.90"`.
+
 Navigation stack (with Android predictive back):
 ```
 enum Screen { list, detail }

@@ -1,0 +1,121 @@
+// Home: today at a glance — balance, budget, journal streak, pinned notes, recent spending.
+
+view HomeScreen(notes: [Note], txs: [Tx], entries: [Entry], today: Int, budget: Float, currency: String,
+                onTab: fn(Tab), onNewNote: fn(), onOpenNote: fn(Int), onAddTx: fn(), onWrite: fn(), onSettings: fn()) {
+  let monthTxs = txs.filter(t => inMonth(t, today))
+  let spent = monthTxs.filter(t => t.kind == .expense).map(t => t.amount).sum()
+  let income = monthTxs.filter(t => t.kind == .income).map(t => t.amount).sum()
+  let recent = txs.sortedBy(t => t.date).reversed().take(3)
+  let pinned = notes.filter(n => n.pinned).sortedBy(n => n.updated).reversed().take(2)
+  let shownNotes = pinned.isEmpty ? notes.sortedBy(n => n.updated).reversed().take(2) : pinned
+  let days = streak(entries, today)
+  let wroteToday = entries.any(e => startOfDay(e.date) == startOfDay(today))
+
+  Scroll(grow: 1, paddingBottom: 24, gap: 16) {
+    // hero: drawn under the status bar
+    Column(safeArea: .top, paddingX: 20, paddingTop: 16, paddingBottom: 56, gap: 6,
+           gradient: [#4F46E5, #7C3AED, #DB2777], gradientAngle: 135, radiusBottomLeft: 28, radiusBottomRight: 28) {
+      Row(align: .center) {
+        Text(formatDate(today, "EEEE, d MMMM").upper(), size: 12, weight: .semibold, letterSpacing: 1.2, color: #E0E7FF, grow: 1)
+        Row(width: 44, height: 44, radius: 22, align: .center, justify: .center, background: #FFFFFF26, role: .button, label: "Settings", onTap: onSettings) {
+          Text("⚙", size: 20, color: #FFFFFF)
+        }
+      }
+      Text(greeting(today), size: 30, lineHeight: 36, weight: .bold, letterSpacing: -0.6, color: #FFFFFF)
+      Text("Spent {money(spent, currency)} this month", size: 15, color: #E0E7FF, id: "spent")
+    }
+    // quick actions overlap the hero (-mt-10)
+    Row(paddingX: 20, gap: 10, offsetY: -48) {
+      QuickAction("✎", label: "Note", onTap: onNewNote, id: "quick-note")
+      QuickAction("−", label: "Expense", onTap: onAddTx, id: "quick-expense")
+      QuickAction("☾", label: "Journal", onTap: onWrite, id: "quick-journal")
+      QuickAction("÷", label: "Calc", onTap: { onTab(.calc) }, id: "quick-calc")
+    }
+    Column(paddingX: 20, gap: 16, offsetY: -48) {
+      TwCard {
+        Row(align: .center) {
+          Column(grow: 1, gap: 2) {
+            Text("Budget", size: 13, weight: .medium, color: .muted)
+            Text("{money(max(0.0, budget - spent), currency)} left", size: 20, weight: .bold)
+          }
+          Badge("{(spent * 100 / max(1.0, budget)).round()}%", tone: spent > budget ? .red : spent > budget * 0.8 ? .amber : .indigo)
+        }
+        Progress(value: spent / max(1.0, budget), color: spent > budget ? .rose500 : .primary)
+        Row(gap: 12) {
+          StatTile(label: "Income", value: moneyShort(income, currency), tone: .success)
+          StatTile(label: "Balance", value: moneyShort(income - spent, currency))
+        }
+      }
+      Row(padding: 16, gap: 14, radius: 16, align: .center, background: .card, border: 1, borderColor: .ring,
+          role: .button, label: wroteToday ? "Journal streak" : "Write today's entry", onTap: wroteToday ? { onTab(.journal) } : onWrite) {
+        Column(width: 48, height: 48, radius: 24, background: days > 0 ? (isDark ? .amber950 : .amber100) : .ring, align: .center, justify: .center) {
+          Text("{days}", size: 18, weight: .bold, color: days > 0 ? (isDark ? .amber300 : .amber700) : .muted)
+        }
+        Column(grow: 1, gap: 2) {
+          Text(days == 1 ? "1-day streak" : "{days}-day streak", size: 15, weight: .semibold)
+          Text(wroteToday ? "Today's entry is written. Nice!" : "Write today's entry to keep it going.", size: 13, color: .muted)
+        }
+        Text("›", size: 22, color: .muted)
+      }
+      SectionTitle(title: pinned.isEmpty ? "Recent notes" : "Pinned notes", trailing: "All notes", onTrailing: { onTab(.notes) })
+      if shownNotes.isEmpty {
+        Text("No notes yet.", size: 14, color: .muted)
+      } else {
+        Grid(columns: 2, gap: 12) {
+          for n in shownNotes by n.id { NoteCard(note: n, onTap: { onOpenNote(n.id) }) }
+        }
+      }
+      SectionTitle(title: "Recent transactions", trailing: "See all", onTrailing: { onTab(.money) })
+      for t in recent by t.id {
+        Row(gap: 12, align: .center, paddingY: 4) {
+          CategoryIcon(c: category(t.category), size: 36)
+          Column(grow: 1, gap: 2) {
+            Text(t.note == "" ? t.category : t.note, size: 14, weight: .medium, maxLines: 1)
+            Text(formatDate(t.date, "EEE, d MMM"), size: 12, color: .muted)
+          }
+          Text(money(signed(t), currency), size: 14, weight: .semibold, color: t.kind == .income ? .success : .text)
+        }
+      }
+    }
+  }
+}
+
+view QuickAction(icon: String, label: String, onTap: fn()) {
+  Column(grow: 1, paddingY: 12, gap: 6, radius: 16, align: .center, background: .card, shadow: .md, border: 1, borderColor: .ring,
+         role: .button, label: label, onTap: onTap) {
+    Row(width: 36, height: 36, radius: 18, background: .accent, align: .center, justify: .center) {
+      Text(icon, size: 17, weight: .bold, color: .onAccent)
+    }
+    Text(label, size: 12, weight: .semibold)
+  }
+}
+
+view SettingsSheet(bind currency: String, bind budget: Float, bind appearance: String, onClose: fn(), onReset: fn()) {
+  state budgetText = ""
+  on appear { budgetText = budget.format(0).replace(",", "").replace(" ", "") }
+  Column(grow: 1, safeArea: .vertical, background: .background) {
+    SheetHeader(title: "Settings", onClose: onClose, onSave: onClose, saveLabel: "Done")
+    Scroll(grow: 1, padding: 20, gap: 16) {
+      TwCard {
+        Text("Currency", size: 14, weight: .semibold)
+        Row(gap: 8, wrap: true) {
+          for c in ["$", "€", "£", "₽"] by c {
+            Chip(c, selected: currency == c, onTap: { currency = c })
+          }
+        }
+        Field("Monthly budget", value: budgetText, keyboard: .number)
+        TwButton("Save budget", onTap: { budget = num(budgetText) }, variant: .soft, enabled: num(budgetText) > 0 && num(budgetText) != budget)
+      }
+      TwCard {
+        Text("Appearance", size: 14, weight: .semibold)
+        Segmented(options: ["System", "Light", "Dark"], selected: appearance)
+      }
+      TwCard {
+        Text("Data", size: 14, weight: .semibold)
+        Text("Everything is stored on this device only.", size: 13, color: .muted)
+        TwButton("Reset to sample data", onTap: onReset, variant: .danger)
+      }
+      Text("Pocket · built with Vard", size: 12, color: .muted, textAlign: .center)
+    }
+  }
+}

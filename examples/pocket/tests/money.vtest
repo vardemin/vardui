@@ -1,0 +1,45 @@
+# Add an expense from the sheet (opened from Home); balance, budget and the day list update
+tap #quick-expense
+expect "New transaction"
+expect "Add" disabled
+type #amount "42,5"
+tap "Transport"
+type "What was it?" "Taxi home"
+tap "Add -$42.50"
+expect no "New transaction"
+expect "Spent $1,186.50 this month"
+tap #tab-money
+expect #balance "$2,433.50"
+expect "59% used"
+expect "Taxi home"
+expect "Today"
+# income
+tap "Add transaction"
+tap "Income"
+type #amount "100"
+tap "Gift"
+tap "‹"
+expect #day "Yesterday"
+tap "Add $100.00"
+expect #balance "$2,533.50"
+# filter and delete
+scroll #balance 600
+tap "Income"
+expect no "Taxi home"
+tap "All"
+tap "Transport Taxi home"
+tap "Delete"
+expect no "Taxi home"
+# previous month is empty
+scroll #balance -600
+tap "‹"
+expect #month "December 2025"
+expect "No transactions"
+# currency follows settings and the locale's number format
+tap #tab-home
+tap "Settings"
+tap "₽"
+tap "Done"
+expect "Spent 1,144.00 ₽ this month"
+locale ru
+expect "Spent 1 144,00 ₽ this month"

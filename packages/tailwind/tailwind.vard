@@ -3,7 +3,8 @@
 // 1. The full Tailwind palette as color tokens: `.slate50` ... `.rose950` (light = dark).
 // 2. Vard's semantic tokens mapped to a Tailwind look (slate neutrals, indigo accent), with
 //    dark values — use these in views so dark mode works; reach for palette tokens for accents.
-// 3. Components with Tailwind defaults (rounded-lg, shadow-sm, ring-1, px-4 py-2 ...).
+// 3. Components with Tailwind defaults (rounded-lg, shadow-sm, ring-1, px-4 py-2 ...):
+//    TwButton TwCard Badge Avatar Field TextArea Segmented Chip Progress IconButton.
 // Class -> prop mapping: `vard doc design` (p-4 = padding: 16, rounded-xl = radius: 12, ...).
 
 theme {
@@ -76,9 +77,14 @@ view TwCard(content: slot) {
 // <span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-700/10">
 view Badge(label: String, tone: TwTone = .gray) {
   Row(paddingX: 8, paddingY: 2, radius: 999, align: .center,
-      background: tone == .indigo ? .indigo50 : tone == .green ? .green50 : tone == .amber ? .amber50 : tone == .red ? .red50 : .slate100) {
+      background: isDark
+        ? (tone == .indigo ? .indigo950 : tone == .green ? .green950 : tone == .amber ? .amber950 : tone == .red ? .red950 : .slate800)
+        : (tone == .indigo ? .indigo50 : tone == .green ? .green50 : tone == .amber ? .amber50 : tone == .red ? .red50 : .slate100)) {
+    // dark: bg-indigo-950 text-indigo-300
     Text(label, size: 12, lineHeight: 16, weight: .medium,
-         color: tone == .indigo ? .indigo700 : tone == .green ? .green700 : tone == .amber ? .amber800 : tone == .red ? .red700 : .slate600)
+         color: isDark
+           ? (tone == .indigo ? .indigo300 : tone == .green ? .green300 : tone == .amber ? .amber300 : tone == .red ? .red300 : .slate300)
+           : (tone == .indigo ? .indigo700 : tone == .green ? .green700 : tone == .amber ? .amber800 : tone == .red ? .red700 : .slate600))
   }
 }
 
@@ -90,9 +96,62 @@ view Avatar(initials: String, size: Float = 40, color: Color = #6366F1) {
 }
 
 // <label class="text-sm font-medium"> + <input class="rounded-md ring-1 ring-slate-300 px-3 py-1.5">
-view Field(label: String, bind value: String, placeholder: String = "", secure: Bool = false) {
+view Field(label: String, bind value: String, placeholder: String = "", secure: Bool = false, keyboard: Keyboard = .text) {
   Column(gap: 8) {
     Text(label, size: 14, weight: .medium)
-    Input(value: value, placeholder: placeholder, secure: secure, size: 14, radius: 6, border: 1, borderColor: .ring, background: .card)
+    Input(value: value, placeholder: placeholder, secure: secure, keyboard: keyboard, size: 14, radius: 6, border: 1, borderColor: .ring, background: .card)
+  }
+}
+
+// <textarea rows="4" class="rounded-md ring-1 ring-slate-300 px-3 py-1.5">: a multi-line Input
+view TextArea(label: String, bind value: String, placeholder: String = "", lines: Int = 4) {
+  Column(gap: 8) {
+    if label != "" { Text(label, size: 14, weight: .medium) }
+    Input(value: value, placeholder: placeholder, lines: lines, size: 14, radius: 6, border: 1, borderColor: .ring, background: .card)
+  }
+}
+
+// <span class="isolate inline-flex rounded-lg bg-slate-200 p-1"><button class="rounded-md bg-white shadow-sm">
+// Each segment is a 44dp touch target around a 36dp pill.
+view Segmented(options: [String], bind selected: String) {
+  Row(radius: 10, background: .ring) {
+    for o in options by o {
+      Row(grow: 1, height: 44, padding: 4, role: .button, label: o, checked: selected == o, onTap: { selected = o }) {
+        Row(grow: 1, radius: 8, align: .center, justify: .center, paddingX: 8,
+            background: selected == o ? .card : .clear, shadow: selected == o ? .sm : .none) {
+          Text(o, size: 14, weight: selected == o ? .semibold : .medium, maxLines: 1)
+        }
+      }
+    }
+  }
+}
+
+// <span class="rounded-full px-3 py-1 text-sm ring-1"> as a toggle: a filter pill with a 44dp target
+view Chip(label: String, selected: Bool = false, onTap: fn() = {}) {
+  Row(height: 44, minWidth: 44, align: .center, justify: .center, role: .button, label: label, checked: selected, onTap: onTap) {
+    Row(paddingX: 12, height: 32, radius: 999, align: .center,
+        background: selected ? .primary : .card, border: 1, borderColor: selected ? .primary : .ring) {
+      Text(label, size: 13, weight: .medium, maxLines: 1, color: selected ? .onPrimary : .text)
+    }
+  }
+}
+
+// <div class="h-2 rounded-full bg-slate-200"><div class="h-2 rounded-full bg-indigo-600" style="width: 62%">
+view Progress(value: Float, color: Color = .primary, height: Float = 8) {
+  Row(height: height, radius: height / 2, background: .ring, clip: true) {
+    Column(grow: clamp(value, 0.0, 1.0), radius: height / 2, background: color)
+    Spacer(grow: 1 - clamp(value, 0.0, 1.0))
+  }
+}
+
+// <button class="rounded-full p-2 hover:bg-slate-100"><svg class="size-5"/></button> with a glyph icon
+view IconButton(icon: String, label: String, onTap: fn() = {}, variant: TwVariant = .ghost, size: Float = 40) {
+  Row(minWidth: 44, minHeight: 44, align: .center, justify: .center, role: .button, label: label, onTap: onTap) {
+    Row(width: size, height: size, radius: size / 2, align: .center, justify: .center,
+        background: variant == .primary ? .primary : variant == .soft ? .accent : variant == .danger ? .danger : variant == .secondary ? .card : .clear,
+        border: variant == .secondary || variant == .outline ? 1 : 0, borderColor: .ring) {
+      Text(icon, size: size * 0.45, weight: .semibold,
+           color: variant == .primary || variant == .danger ? .onPrimary : variant == .soft ? .onAccent : variant == .ghost ? .muted : .text)
+    }
   }
 }

@@ -28,6 +28,11 @@ fn fmt(v: f32) -> String {
     }
 }
 
+/// No-break spaces (U+00A0, U+202F) as plain spaces.
+pub fn plain(s: &str) -> String {
+    s.replace(['\u{a0}', '\u{202f}'], " ")
+}
+
 pub fn hex(c: u32) -> String {
     if c & 0xFF == 0xFF {
         format!("#{:06X}", c >> 8)
@@ -59,7 +64,13 @@ impl Runtime {
     }
 
     /// Accessibility-style label: explicit `label`, else own text, else merged descendant text.
+    /// The accessibility/inspection label. No-break spaces (number grouping `1 234,50`)
+    /// read as plain spaces, so tests and selectors can type them.
     pub fn label_of(&self, key: NodeKey) -> String {
+        plain(&self.label_raw(key))
+    }
+
+    fn label_raw(&self, key: NodeKey) -> String {
         let Some(n) = self.nodes.get(key) else { return String::new() };
         if let Some(l) = &n.label {
             return l.to_string();
@@ -122,7 +133,7 @@ impl Runtime {
                 line.push_str(&format!(" {:?}", label));
             }
             if n.kind == Kind::Input {
-                let shown_val = if n.secure { "•".repeat(n.text.chars().count()) } else { n.text.to_string() };
+                let shown_val = if n.secure { "•".repeat(n.text.chars().count()) } else { plain(&n.text) };
                 line.push_str(&format!(" value={:?}", shown_val));
             }
             if let Some(c) = n.checked {
@@ -274,6 +285,13 @@ impl Runtime {
             let low = sel.to_lowercase();
             hits = sem.iter().filter(|n| n.label.to_lowercase().contains(&low)).collect();
         }
+        // prefer what a finger can reach: on screen and not covered (a sheet over a list)
+        if hits.len() > 1 {
+            let reachable: Vec<&SemNode> = hits.iter().copied().filter(|h| self.reachable(h.key)).collect();
+            if !reachable.is_empty() && reachable.len() < hits.len() {
+                hits = reachable;
+            }
+        }
         // prefer the innermost matches (a view group and its child can share a label)
         if hits.len() > 1 {
             let max_depth = hits.iter().map(|h| h.depth).max().unwrap_or(0);
@@ -295,6 +313,40 @@ impl Runtime {
         }
     }
 
+    /// Deepest visible node under (x, y) in dp, in paint order (last painted wins).
+    pub fn hit(&self, x: f32, y: f32) -> Option<NodeKey> {
+        fn inside(r: crate::node::Rect, x: f32, y: f32) -> bool {
+            x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h
+        }
+        fn walk(rt: &Runtime, k: NodeKey, x: f32, y: f32) -> Option<NodeKey> {
+            let n = rt.nodes.get(k)?;
+            if (n.kind == Kind::Scroll || n.clip) && !inside(crate::layout::apply_xf(n.rect, n.xf), x, y) {
+                return None; // Scroll / clip: true clips its subtree
+            }
+            if let Some(hit) = n.children.iter().rev().find_map(|&c| walk(rt, c, x, y)) {
+                return Some(hit);
+            }
+            let r = rt.visible_rect(k)?;
+            inside(r, x, y).then_some(k)
+        }
+        walk(self, self.root, x, y)
+    }
+
+    /// The center of `key`'s visible part hit-tests into `key` itself (or a descendant).
+    fn reachable(&self, key: NodeKey) -> bool {
+        let Some(r) = self.visible_rect(key) else { return false };
+        let Some(mut k) = self.hit(r.x + r.w / 2.0, r.y + r.h / 2.0) else { return false };
+        loop {
+            if k == key {
+                return true;
+            }
+            match self.nodes.get(k).and_then(|n| n.parent) {
+                Some(p) => k = p,
+                None => return false,
+            }
+        }
+    }
+
     fn label_list(&self, sem: &[SemNode]) -> String {
         let mut v: Vec<String> = sem.iter().filter(|n| !n.label.is_empty()).map(|n| format!("{:?}", n.label)).collect();
         v.dedup();
@@ -304,12 +356,13 @@ impl Runtime {
 
     /// Does any text on screen contain `text`?
     pub fn has_text(&self, text: &str) -> bool {
-        let low = text.to_lowercase();
+        let low = plain(text).to_lowercase();
+        let has = |s: &str| plain(s).to_lowercase().contains(&low);
         self.nodes.iter().any(|(k, n)| {
             self.attached(k)
                 && match n.kind {
-                    Kind::Text | Kind::Input => n.text.to_lowercase().contains(&low) || n.label.as_deref().is_some_and(|l| l.to_lowercase().contains(&low)),
-                    _ => n.label.as_deref().is_some_and(|l| l.to_lowercase().contains(&low)),
+                    Kind::Text | Kind::Input => has(&n.text) || n.label.as_deref().is_some_and(has),
+                    _ => n.label.as_deref().is_some_and(has),
                 }
         })
     }

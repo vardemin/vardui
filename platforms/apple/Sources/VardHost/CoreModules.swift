@@ -18,11 +18,16 @@ public enum CoreModules {
     }
 }
 
-/// openUrl, shareText, haptic, openAppSettings.
+/// now, openUrl, shareText, haptic, openAppSettings.
 public final class SystemModule: VardModule {
     public init() {}
     public var functions: [String: (VardCall) -> Any?] {
         [
+            // local wall-clock milliseconds: the zone offset (with DST) is applied here
+            "now": { _ in
+                let d = Date()
+                return Int64((d.timeIntervalSince1970 + Double(TimeZone.current.secondsFromGMT(for: d))) * 1000)
+            },
             "openUrl": { c in
                 if let url = URL(string: c.string(0)) { Self.open(url) }
                 return nil

@@ -1,0 +1,117 @@
+// Pocket: a showcase of an everyday app built with Vard + the `tailwind` package —
+// notes, a money tracker, a journal and financial calculators in one native app.
+// All data lives in `pref`s (SharedPreferences / UserDefaults), so it survives restarts.
+
+enum Page { none, note, addTx, journal, settings }
+
+// text-emerald-700 for money in (tailwind's green-600 is too light for text on white)
+theme { success: #047857 }
+theme dark { success: #34D399 }
+
+view App {
+  pref tab: Tab = .home
+  pref notes: [Note] = seedNotes(now())
+  pref txs: [Tx] = seedTxs(now())
+  pref entries: [Entry] = seedEntries(now())
+  pref currency = "$"
+  pref budget = 2000.0
+  pref appearance = "System"
+  state page: Page = .none
+  state openNote = 0
+  state today = now()
+
+  fn applyAppearance() {
+    setColorScheme(appearance == "Dark" ? .dark : appearance == "Light" ? .light : .system)
+  }
+
+  fn newNote() {
+    let id = (notes.map(n => n.id).max() ?? 0) + 1
+    notes.append(Note(id: id, title: "", updated: now()))
+    openNote = id
+    page = .note
+  }
+
+  fn openNoteById(id: Int) {
+    openNote = id
+    page = .note
+  }
+
+  fn closeNote() {
+    // an untouched new note is not kept
+    notes.removeWhere(n => n.id == openNote && n.title.trim().isEmpty && n.body.trim().isEmpty)
+    page = .none
+  }
+
+  fn addTx(t: Tx) {
+    let id = (txs.map(x => x.id).max() ?? 0) + 1
+    txs.append(Tx(id: id, amount: t.amount, kind: t.kind, category: t.category, note: t.note, date: t.date))
+    page = .none
+    haptic(.success)
+  }
+
+  fn addEntry(e: Entry) {
+    let id = (entries.map(x => x.id).max() ?? 0) + 1
+    entries.append(Entry(id: id, date: now(), mood: e.mood, text: e.text))
+    page = .none
+    tab = .journal
+    haptic(.success)
+  }
+
+  fn reset() {
+    notes = seedNotes(now())
+    txs = seedTxs(now())
+    entries = seedEntries(now())
+    page = .none
+    tab = .home
+  }
+
+  on appear { applyAppearance() }
+  on appResume { today = now() }
+  on back if page != .none {
+    if page == .note { closeNote() } else { page = .none }
+  }
+  on back if page == .none && tab != .home { tab = .home }
+
+  Stack(grow: 1, background: .surface) {
+    Column(grow: 1, offsetX: page == .note || page == .journal || page == .settings ? backProgress * 48 : 0) {
+      if page == .note {
+        for n in notes by n.id {
+          if n.id == openNote {
+            NoteEditor(note: n, onClose: closeNote, onDelete: {
+              notes.removeWhere(x => x.id == openNote)
+              page = .none
+            })
+          }
+        }
+      } else if page == .journal {
+        JournalEditor(today: today, onClose: { page = .none }, onSave: addEntry)
+      } else if page == .settings {
+        SettingsSheet(currency: currency, budget: budget, appearance: appearance, onClose: {
+          applyAppearance()
+          page = .none
+        }, onReset: reset)
+      } else {
+        Column(grow: 1) {
+          if tab == .home {
+            HomeScreen(notes: notes, txs: txs, entries: entries, today: today, budget: budget, currency: currency,
+                       onTab: t => { tab = t }, onNewNote: newNote, onOpenNote: openNoteById,
+                       onAddTx: { page = .addTx }, onWrite: { page = .journal }, onSettings: { page = .settings })
+          } else if tab == .notes {
+            NotesScreen(notes: notes, onOpen: openNoteById, onNew: newNote)
+          } else if tab == .money {
+            MoneyScreen(txs: txs, today: today, budget: budget, currency: currency, onAdd: { page = .addTx },
+                        onDelete: id => { txs.removeWhere(t => t.id == id) })
+          } else if tab == .journal {
+            JournalScreen(entries: entries, today: today, onWrite: { page = .journal })
+          } else {
+            CalcScreen(today: today, currency: currency)
+          }
+        }
+        TabBar(tab: tab)
+      }
+    }
+    if page == .addTx {
+      AddTxSheet(today: today, currency: currency, onClose: { page = .none }, onSave: addTx)
+    }
+  }
+}

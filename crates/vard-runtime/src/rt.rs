@@ -204,8 +204,12 @@ impl Runtime {
         for (n, l, d) in registry::COLOR_TOKENS {
             tokens.insert(n.to_string(), (*l, *d));
         }
+        // package themes first, then the app's own: the app overrides a package's tokens
+        let from_pkg = |t: &&vard_lang::ast::ThemeDecl| c.sources.files.get(t.span.file as usize).is_some_and(|f| f.path.starts_with('@'));
+        let mut themes: Vec<&vard_lang::ast::ThemeDecl> = c.program.themes.iter().collect();
+        themes.sort_by_key(|t| !from_pkg(t));
         for dark in [false, true] {
-            for t in c.program.themes.iter().filter(|t| t.dark == dark) {
+            for t in themes.iter().filter(|t| t.dark == dark) {
                 for (name, e, _) in &t.entries {
                     if let Expr::Color(col) = c.program.expr(*e) {
                         let entry = tokens.entry(name.clone()).or_insert((*col, *col));
@@ -223,7 +227,7 @@ impl Runtime {
                 }
             }
         }
-        let default_font = c.program.themes.iter().flat_map(|t| t.entries.iter()).find(|(n, _, _)| n == "font").and_then(|(_, e, _)| {
+        let default_font = themes.iter().rev().flat_map(|t| t.entries.iter()).find(|(n, _, _)| n == "font").and_then(|(_, e, _)| {
             match c.program.expr(*e) {
                 Expr::Str(parts) => match parts.as_slice() {
                     [StrPart::Lit(s)] => Some(Rc::from(s.as_str())),
@@ -566,7 +570,8 @@ impl Runtime {
                     if let Some(n) = self.nodes.get_mut(*node) {
                         let old = if n.shown && n.animate != 0 { crate::anim::get(n, name) } else { None };
                         n.apply(name, &v);
-                        self.layout_dirty |= crate::node::affects_layout(name);
+                        // a multi-line Input re-wraps its text
+                        self.layout_dirty |= crate::node::affects_layout(name) || (n.multiline() && matches!(*name, "value" | "placeholder"));
                         if let Some(old) = old {
                             self.start_tween(*node, name, old, v.clone());
                         }

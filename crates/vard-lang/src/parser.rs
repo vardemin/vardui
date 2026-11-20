@@ -946,7 +946,8 @@ impl<'a> Parser<'a> {
             }
             self.bump();
             self.skip_newlines();
-            let rhs = self.binary(prec + 1)?;
+            // `??` is right-associative (`a ?? b ?? c` = `a ?? (b ?? c)`), the rest left
+            let rhs = self.binary(if op == BinOp::Coalesce { prec } else { prec + 1 })?;
             lhs = self.prog.add_expr(Expr::Binary(op, lhs, rhs), start.to(self.prev_span()));
         }
         Ok(lhs)

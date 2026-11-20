@@ -1,0 +1,26 @@
+# Loan: 250 000 at 6.5% for 30 years
+tap #tab-calc
+expect #result "$1,580.17"
+expect "360 payments"
+type "250000" "300000"
+expect #result "$1,896.20"
+type "6.5" "0"
+expect #result "$833.33"
+# Savings: 1000 + 200 a month at 7% for 10 years
+tap "Savings"
+expect #result "$36,626.62"
+expect "In 10 years"
+# Goal: 10 000, 1 500 saved, 300 a month at 4%
+tap "Goal"
+expect #result "2 years 3 months"
+expect "Around April 2028"
+type #goal-monthly "0"
+type #goal-rate "0"
+expect #result "Never"
+# 50/30/20
+tap "Budget"
+expect #result "$600.00"
+expect "$1,500.00"
+expect "$900.00"
+type #income "5 000"
+expect #result "$1,000.00"

@@ -156,7 +156,10 @@ impl std::ops::DerefMut for D<'_> {
 pub const VIEW_OUTER_PROPS: &[&str] =
     &["width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight", "aspectRatio", "grow", "alignSelf", "id", "opacity", "offsetX", "offsetY", "scale"];
 
-const BUILTIN_FNS: &[&str] = &["print", "range", "min", "max", "t"];
+const BUILTIN_FNS: &[&str] = &[
+    "print", "range", "min", "max", "t", "pow", "sqrt", "log", "exp", "clamp", "date", "dateOf", "addDays", "addMonths", "startOfDay", "daysBetween",
+    "formatDate",
+];
 
 impl<'a> Checker<'a> {
     pub fn new(p: &'a Program, src: &'a Sources) -> Checker<'a> {
@@ -1291,6 +1294,18 @@ impl<'a> Checker<'a> {
                 let ta = self.check(a, want.map(|w| Ty::Opt(Box::new(w.clone()))).as_ref());
                 match ta {
                     Ty::Opt(inner) => {
+                        // `a ?? b ?? c`: an optional fallback keeps the result optional
+                        if let Expr::Binary(BinOp::Coalesce, ..) = p.expr(b) {
+                            let opt = Ty::Opt(inner.clone());
+                            let tb = self.check(b, Some(&opt));
+                            if assignable(&tb, &inner) {
+                                return *inner;
+                            }
+                            if !assignable(&tb, &opt) {
+                                self.err("E0301", p.span(b), format!("expected {}, found {}", inner, tb));
+                            }
+                            return opt;
+                        }
                         self.expect(b, &inner);
                         *inner
                     }
@@ -1376,16 +1391,16 @@ impl<'a> Checker<'a> {
     fn members_of(&self, t: &Ty, methods: bool) -> Vec<String> {
         let v: &[&str] = match (t, methods) {
             (Ty::Str, false) => &["count", "isEmpty"],
-            (Ty::Str, true) => &["trim", "upper", "lower", "contains", "startsWith", "endsWith", "split", "toInt", "toFloat"],
+            (Ty::Str, true) => &["trim", "upper", "lower", "contains", "startsWith", "endsWith", "split", "toInt", "toFloat", "replace", "padStart"],
             (Ty::List(_), false) => &["count", "isEmpty", "first", "last"],
             (Ty::List(_), true) => &[
-                "contains", "indexOf", "map", "filter", "find", "any", "all", "sum", "join", "sortedBy", "reversed", "append", "insert",
-                "removeAt", "remove", "removeWhere", "clear",
+                "contains", "indexOf", "map", "filter", "find", "any", "all", "sum", "join", "sortedBy", "reversed", "take", "distinct",
+                "max", "min", "append", "insert", "removeAt", "remove", "removeWhere", "clear",
             ],
             (Ty::Map(_), false) => &["count", "isEmpty", "keys", "values"],
             (Ty::Map(_), true) => &["contains", "remove", "clear"],
-            (Ty::Int, true) => &["toFloat", "toString", "abs"],
-            (Ty::Float, true) => &["toInt", "round", "floor", "ceil", "fixed", "toString", "abs"],
+            (Ty::Int, true) => &["toFloat", "toString", "abs", "format"],
+            (Ty::Float, true) => &["toInt", "round", "floor", "ceil", "fixed", "format", "toString", "abs"],
             (Ty::Struct(s), false) => {
                 return self.structs.get(s).map(|f| f.iter().map(|f| f.name.clone()).collect()).unwrap_or_default();
             }
@@ -1433,6 +1448,41 @@ impl<'a> Checker<'a> {
                         let sig = [Ty::Int, Ty::Int].map(|ty| ParamSig { name: String::new(), ty, has_default: false, bind: false });
                         self.call_args(name, &sig, args, sp);
                         return Ty::List(Box::new(Ty::Int));
+                    }
+                    "pow" | "sqrt" | "log" | "exp" | "date" | "dateOf" | "addDays" | "addMonths" | "startOfDay" | "daysBetween" | "formatDate" => {
+                        let names = registry::builtin_fn(name).unwrap_or(&[]);
+                        let (tys, ret): (&[Ty], Ty) = match name.as_str() {
+                            "pow" => (&[Ty::Float, Ty::Float], Ty::Float),
+                            "sqrt" | "log" | "exp" => (&[Ty::Float], Ty::Float),
+                            "date" => (&[Ty::Int], Ty::Struct("DateParts".into())),
+                            "dateOf" => (&[Ty::Int, Ty::Int, Ty::Int, Ty::Int, Ty::Int], Ty::Int),
+                            "startOfDay" => (&[Ty::Int], Ty::Int),
+                            "formatDate" => (&[Ty::Int, Ty::Str], Ty::Str),
+                            _ => (&[Ty::Int, Ty::Int], Ty::Int),
+                        };
+                        let sig: Vec<ParamSig> = names
+                            .iter()
+                            .zip(tys)
+                            .enumerate()
+                            .map(|(i, (n, ty))| ParamSig { name: n.to_string(), ty: ty.clone(), has_default: name == "dateOf" && i >= 3, bind: false })
+                            .collect();
+                        self.call_args(name, &sig, args, sp);
+                        return ret;
+                    }
+                    "clamp" => {
+                        if args.len() != 3 {
+                            self.err("E0316", sp, "`clamp` takes 3 arguments: clamp(x, lo, hi)");
+                            return Ty::Unknown;
+                        }
+                        let ts: Vec<Ty> = args.iter().map(|a| self.check(a.value, None)).collect();
+                        if ts.iter().all(|t| matches!(t, Ty::Int)) {
+                            return Ty::Int;
+                        }
+                        if ts.iter().all(|t| matches!(t, Ty::Int | Ty::Float | Ty::Unknown)) {
+                            return Ty::Float;
+                        }
+                        self.err("E0303", sp, format!("`clamp` needs numbers, found {}", ts.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")));
+                        return Ty::Unknown;
                     }
                     "min" | "max" => {
                         if args.len() != 2 {
@@ -1637,6 +1687,30 @@ impl<'a> Checker<'a> {
             (Ty::Float, "toInt" | "round" | "floor" | "ceil") => simple(self, &[], Ty::Int),
             (Ty::Float, "fixed") => simple(self, &[Ty::Int], Ty::Str),
             (Ty::Float, "abs") => simple(self, &[], Ty::Float),
+            (Ty::Int | Ty::Float, "format") => {
+                // `x.format()` / `x.format(2)`: locale-grouped, fixed decimals
+                if args.len() > 1 {
+                    self.err("E0316", sp, "`format` takes the number of decimals: `x.format(2)`");
+                }
+                if let Some(a) = args.first() {
+                    self.expect(a.value, &Ty::Int);
+                }
+                Ty::Str
+            }
+            (Ty::Str, "replace") => simple(self, &[Ty::Str, Ty::Str], Ty::Str),
+            (Ty::Str, "padStart") => {
+                // `"7".padStart(2, "0")`; the fill defaults to a space
+                if args.is_empty() || args.len() > 2 {
+                    self.err("E0316", sp, "`padStart` takes a width and an optional fill: `s.padStart(2, \"0\")`");
+                }
+                if let Some(a) = args.first() {
+                    self.expect(a.value, &Ty::Int);
+                }
+                if let Some(a) = args.get(1) {
+                    self.expect(a.value, &Ty::Str);
+                }
+                Ty::Str
+            }
             (Ty::List(t), _) => {
                 let t = (**t).clone();
                 let mutating = matches!(name, "append" | "insert" | "removeAt" | "remove" | "removeWhere" | "clear");
@@ -1683,7 +1757,14 @@ impl<'a> Checker<'a> {
                         }
                         simple(self, &[Ty::Str], Ty::Str)
                     }
-                    "reversed" => simple(self, &[], Ty::List(Box::new(t))),
+                    "reversed" | "distinct" => simple(self, &[], Ty::List(Box::new(t))),
+                    "take" => simple(self, &[Ty::Int], Ty::List(Box::new(t))),
+                    "max" | "min" => {
+                        if !matches!(t, Ty::Int | Ty::Float | Ty::Str | Ty::Unknown) {
+                            self.err("E0303", sp, format!("`{}` needs a list of numbers or String, found [{}]", name, t)).help(format!("map first: `.map(x => x.amount).{}()`", name));
+                        }
+                        simple(self, &[], Ty::Opt(Box::new(t)))
+                    }
                     "append" | "remove" => simple(self, &[t], Ty::Unit),
                     "insert" => simple(self, &[Ty::Int, t], Ty::Unit),
                     "removeAt" => simple(self, &[Ty::Int], Ty::Unit),

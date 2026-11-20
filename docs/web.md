@@ -27,7 +27,7 @@ vard.run('tap "Add"; tree');            // the action language, from the console
 | Feature | How it works |
 |---|---|
 | Drawing | `requestAnimationFrame` only after events and while animating; the canvas follows the element's size and `devicePixelRatio` |
-| Text input | a real `<input>` over each `Input` (IME, autofill, password managers, mobile keyboards with the right `type`), clipped like the app clips it |
+| Text input | a real `<input>` over each `Input` (IME, autofill, password managers, mobile keyboards with the right `type`), clipped like the app clips it; a multi-line `Input` (`lines:`) is a `<textarea>` (Enter = newline, Shift+Enter = `onSubmit`) |
 | Pointer | tap, drag to scroll with momentum, wheel and trackpad |
 | Back | Escape, and the browser's back button while an `on back` handler is enabled (the host pushes a history entry) |
 | Images | fetched by the page (project assets or `https://`), decoded into GPU textures |

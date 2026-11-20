@@ -303,6 +303,16 @@ impl Painter {
                     }
                 }
             }
+            Kind::Input if n.multiline() => {
+                // wrapped by layout (value, or placeholder while empty), top-aligned, clipped to the box
+                let empty = n.text.is_empty();
+                let c = if empty { n.placeholder_color.unwrap_or_else(|| rt.token("muted")) } else { n.color.unwrap_or_else(|| rt.token("text")) };
+                let clip = intersect(clip, r);
+                for (i, (line, _)) in n.lines.iter().enumerate() {
+                    let y = r.y + pt + i as f32 * line_h;
+                    self.text(rt, line, r.x + pl, y, line_h, px, face, spacing, n.italic, c, alpha, clip);
+                }
+            }
             Kind::Input => {
                 let empty = n.text.is_empty();
                 let shown: String = if empty {

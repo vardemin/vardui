@@ -35,6 +35,17 @@ pub struct Sim {
     pub answers: BTreeMap<String, String>,
     pub notifications: Vec<String>,
     pub push_token: String,
+    /// what `now()` returns (`clock` action); `None` = [`Sim::DEFAULT_CLOCK`]
+    pub clock: Option<i64>,
+}
+
+impl Sim {
+    /// 2026-01-15 09:30 (a Thursday): headless runs are deterministic.
+    pub const DEFAULT_CLOCK: i64 = 1_768_469_400_000;
+
+    pub fn now(&self) -> i64 {
+        self.clock.unwrap_or(Self::DEFAULT_CLOCK)
+    }
 }
 
 pub(crate) struct Callback {
@@ -159,7 +170,10 @@ impl Runtime {
             self.apply_scheme();
             return Value::Unit;
         }
-        self.native_calls.push(shown.clone());
+        // reading the clock is not a platform action worth logging
+        if &*name != "now" {
+            self.native_calls.push(shown.clone());
+        }
         let ret_ty = d.ret.clone();
         let cb_params: Vec<(usize, Vec<TypeRef>)> = d
             .params
@@ -510,6 +524,7 @@ impl Runtime {
         };
         let _ = p;
         Some(match name {
+            "now" => Value::Int(self.sim.now()),
             "permissionStatus" => Value::Enum(Rc::from(self.sim.permissions.get(&s(0)).map(|s| s.as_str()).unwrap_or("notDetermined"))),
             "requestPermission" => {
                 let perm = s(0);
