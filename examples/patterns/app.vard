@@ -42,3 +42,16 @@ view Nav {
     }
   }
 }
+
+// Animations (skill vard-app): `animate:` interpolates prop changes, `enter:` plays on appear
+view Animated {
+  state open = false
+  Column(grow: 1, gap: 12, padding: 16) {
+    Button(open ? "Hide" : "Show", onTap: { open = !open })
+    Column(id: "panel", height: open ? 120 : 48, background: open ? .primary : .surface, radius: 12,
+           opacity: open ? 1 : 0.6, animate: .spring) {
+      Text("Panel", padding: 12)
+    }
+    if open { Text("Details", id: "details", enter: .slideUp, duration: 200) }
+  }
+}

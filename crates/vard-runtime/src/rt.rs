@@ -192,6 +192,10 @@ pub struct Runtime {
     pub(crate) next_push: u64,
     /// Input with keyboard focus
     pub focused: Option<NodeKey>,
+    // ---- animation ----
+    /// animation clock, ms; moved only by `advance` (host frames, `wait` in tests)
+    pub clock: f64,
+    pub(crate) tweens: Vec<crate::anim::Tween>,
 }
 
 impl Runtime {
@@ -303,6 +307,8 @@ impl Runtime {
             root_view: None,
             next_push: 0,
             focused: None,
+            clock: 0.0,
+            tweens: Vec::new(),
         }
     }
 
@@ -324,6 +330,7 @@ impl Runtime {
         self.nodes[self.root].children.clear();
         self.handlers.clear();
         self.appear.clear();
+        self.tweens.clear();
         self.callbacks.clear();
         self.pending.clear();
         self.deferred.clear();
@@ -557,8 +564,12 @@ impl Runtime {
                 // equality cut-off: an unchanged value touches nothing
                 if last.as_ref() != Some(&v) {
                     if let Some(n) = self.nodes.get_mut(*node) {
+                        let old = if n.shown && n.animate != 0 { crate::anim::get(n, name) } else { None };
                         n.apply(name, &v);
                         self.layout_dirty |= crate::node::affects_layout(name);
+                        if let Some(old) = old {
+                            self.start_tween(*node, name, old, v.clone());
+                        }
                     }
                     *last = Some(v);
                 }

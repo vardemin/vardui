@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/vard-lang", "crates/vard-runtime", "crates/vard-pkg", "crates/vard-cli", "crates/vard-ffi"]
+members = ["crates/vard-lang", "crates/vard-runtime", "crates/vard-pkg", "crates/vard-cli", "crates/vard-ffi", "crates/vard-gpu", "crates/vard-desktop", "crates/vard-web"]
 
 [workspace.package]
 version = "0.4.0"

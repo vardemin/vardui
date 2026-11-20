@@ -11,7 +11,7 @@ or your own `.vard` files:
 ```
 on appear { load() }                       // this view instance was just shown (once)
 on appResume { refresh() }   on appPause { save() }
-on deepLink(url) { ... }                   // vard://... (Android intent filter in the app manifest)
+on deepLink(url) { ... }                   // vard://... (Android intent filter; iOS: VardLifecycle.open(url))
 on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
 ```
 - `on back`: the innermost enabled handler takes the system back gesture/button. With
@@ -24,7 +24,7 @@ on back if stack.count > 1 { stack.removeAt(stack.count - 1) }
   `safeArea.top/.bottom` reads them. Bottom includes the keyboard (`keyboardHeight`);
   the focused Input is scrolled above the keyboard automatically.
 - `setColorScheme(.dark|.light|.system)`, `isDark`, `screenWidth`, `screenHeight`,
-  `platform`, `openUrl(url)`, `shareText(text)`, `haptic(.success)`, `openAppSettings()`.
+  `platform` (`android ios macos windows linux web headless`), `openUrl(url)`, `shareText(text)`, `haptic(.success)`, `openAppSettings()`.
 
 ## Storage
 ```
@@ -47,7 +47,9 @@ if cam == .blocked { Button("Open settings", onTap: { openAppSettings() }) }
 ```
 `blocked` = the system will not show the dialog again (user refused twice / "don't ask").
 Android: the permission must be in AndroidManifest.xml (`POST_NOTIFICATIONS` is built in);
-a missing one answers `denied` and logs what to add.
+a missing one answers `denied` and logs what to add. iOS: add the usage string to Info.plist
+(`NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, `NSLocationWhenInUseUsageDescription`,
+`NSPhotoLibraryUsageDescription`, `NSContactsUsageDescription`); a refused permission is `blocked`.
 
 ## Notifications and push
 `struct PushMessage { id, title, body, data: [String: String] }`
@@ -103,6 +105,15 @@ parameters receives a JSON array of both: `resolve firestoreListNotes [[{"title"
 4. Register: `class MainActivity : VardActivity() { override fun modules() = listOf(PlacesImpl()) }`,
    or ship it as a library with `<meta-data android:name="dev.vard.module.places"
    android:value="com.example.PlacesImpl"/>` in its manifest (auto-registered).
+5. iOS/macOS (`platforms/apple`, Swift package `VardHost`): `vard bindings --swift --class
+   PlacesModule --out Places.swift`, implement the protocol, then
+   `extension VardEngine: PlacesModuleHost {}` and
+   `engine.addDispatcher { n, json in places.call(n, json, host: engine) }`; or write a
+   `VardModule` (`functions: ["searchPlaces": { c in ...; c.callback(1).resolve(...) }]`)
+   and pass it to `VardViewController(modules: [...])`.
+6. Web (`platforms/web/vard.js`): `start(el, { modules: { searchPlaces: ([q, done], engine) =>
+   { api(q).then(r => engine.answer(done, r)); return null } } })`. Desktop
+   (`vard-desktop`): wrap `DesktopHost` in your own Rust `NativeHost`.
 - Native values cross as JSON and are decoded by the *declared* Vard type, so one native
   function can serve many app types (the firebase package's `firestoreGet*` works for any struct).
 - Ship it as a package so other apps get it with one command: put the Gradle library in

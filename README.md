@@ -39,18 +39,29 @@ $ vard run --do 'tap "Tap me"'
 
 ### Platform features
 
-| Feature | In the language | On Android |
-|---|---|---|
-| Push and its handling | `on pushReceived(m)`, `on pushOpened(m)`, `getPushToken`, `showNotification` | FCM (`firebase` package), background notifications, open on tap (including cold start) |
-| Permissions | `permissionStatus`, `requestPermission(.camera, s => ...)`, `.blocked` → `openAppSettings()` | runtime permissions, "don't ask again" handled |
-| Preferences | `pref theme = "light"` — state kept across launches; `prefGet/prefSet` | SharedPreferences |
-| Keychain | `secureGet/secureSet/secureRemove` | AES-256-GCM, key in the Android Keystore |
-| Edge-to-edge | drawn under the system bars; `safeArea: .top/.bottom/...`, `safeArea.top`, `keyboardHeight` | bar, cutout and keyboard insets; the focused `Input` scrolls above the keyboard |
-| Predictive back | `on back if stack.count > 1 { ... }`, `backProgress` for animation | `OnBackAnimationCallback` (API 34+), the system back-to-home animation when the app does not intercept |
-| Any design | shadows, gradients, per-corner radii, `Grid`, `Row(wrap:)`, weights 100–900, project fonts, letter spacing, offset/scale, clip | the same frame drawn with Canvas; text measured by the platform shaper |
-| Native SDKs | `extern fn` / `extern event`, data = structs/enums/lists/maps | `vard bindings --kotlin` → typed base class; module libraries register themselves (`dev.vard.module.*`) |
+| Feature | In the language | On Android | On iOS / macOS |
+|---|---|---|---|
+| Push and its handling | `on pushReceived(m)`, `on pushOpened(m)`, `getPushToken`, `showNotification` | FCM (`firebase` package), background notifications, open on tap (including cold start) | UserNotifications, APNs token |
+| Permissions | `permissionStatus`, `requestPermission(.camera, s => ...)`, `.blocked` → `openAppSettings()` | runtime permissions, "don't ask again" handled | AVFoundation, Photos, Contacts, CoreLocation, notifications |
+| Preferences | `pref theme = "light"` — state kept across launches; `prefGet/prefSet` | SharedPreferences | UserDefaults |
+| Keychain | `secureGet/secureSet/secureRemove` | AES-256-GCM, key in the Android Keystore | Keychain (this device only) |
+| Edge-to-edge | drawn under the system bars; `safeArea: .top/.bottom/...`, `safeArea.top`, `keyboardHeight` | bar, cutout and keyboard insets; the focused `Input` scrolls above the keyboard | safe area and keyboard frame |
+| Predictive back | `on back if stack.count > 1 { ... }`, `backProgress` for animation | `OnBackAnimationCallback` (API 34+), the system back-to-home animation when the app does not intercept | left-edge swipe; Esc / ⌘[ on macOS |
+| Any design | shadows, gradients, per-corner radii, `Grid`, `Row(wrap:)`, weights 100–900, project fonts, letter spacing, offset/scale, clip | the same frame drawn with Canvas; text measured by the platform shaper | the GPU renderer (Metal), pixel-matched to headless screenshots |
+| Animation | `animate: .spring` on changing props, `enter: .slideUp` on appearing elements, `wait MS` in tests | `Choreographer` drives the frame clock | `CADisplayLink` drives the frame clock |
+| Native SDKs | `extern fn` / `extern event`, data = structs/enums/lists/maps | `vard bindings --kotlin` → typed base class; module libraries register themselves (`dev.vard.module.*`) | `vard bindings --swift` → protocol + dispatcher; `VardModule` |
 
-The iOS shell, a GPU renderer, animations and bytecode compilation are on the
+Every host draws with the same GPU renderer (`crates/vard-gpu`, wgpu), pixel-matched to the
+headless screenshots:
+
+| Host | Shell | GPU API | Run it |
+|---|---|---|---|
+| [Android](https://vardemin.github.io/vardui/android.html) | Kotlin `VardActivity`, `SurfaceView` (Canvas fallback) | Vulkan, GLES | `platforms/android`: `./gradlew :app:installDebug` |
+| [iOS, macOS](https://vardemin.github.io/vardui/apple.html) | Swift package `VardHost`, `CAMetalLayer` | Metal | `platforms/apple/run-ios-sim.sh examples/todo "iPhone 15 Pro"` |
+| [Windows, Linux, macOS](https://vardemin.github.io/vardui/desktop.html) | `vard-desktop` (winit), live reload | DX12, Vulkan, GL, Metal | `cargo run -p vard-desktop -- examples/todo` |
+| [Web](https://vardemin.github.io/vardui/web.html) | WebAssembly + `vard.js` | WebGPU, WebGL2 | `platforms/web/build.sh examples/todo` |
+
+Bytecode compilation and accessibility mapping are on the
 [roadmap](https://vardemin.github.io/vardui/architecture.html#roadmap).
 
 ## Quick start

@@ -11,3 +11,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
 getrandom = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# the web host links the core (vard-ffi -> vard-pkg for OTA checks)
+getrandom = { version = "0.2", features = ["js"] }

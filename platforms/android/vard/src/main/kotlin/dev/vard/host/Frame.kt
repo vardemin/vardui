@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Decoded `vard_frame` buffer (format v2: crates/vard-ffi/src/frame.rs). Units are dp. */
-class Frame(val dark: Boolean, val backEnabled: Boolean, val background: Int, val records: List<Record>) {
+class Frame(val dark: Boolean, val backEnabled: Boolean, val animating: Boolean, val background: Int, val records: List<Record>) {
 
     class Line(val text: String, val width: Float)
 
@@ -141,7 +141,7 @@ class Frame(val dark: Boolean, val backEnabled: Boolean, val background: Int, va
                     lineHeight, weight, keyboard, letterSpacing, pl, pt, pr, pb, font, text, placeholder, lines,
                 )
             }
-            return Frame(hflags and 1 != 0, hflags and 2 != 0, background, records)
+            return Frame(hflags and 1 != 0, hflags and 2 != 0, hflags and 4 != 0, background, records)
         }
 
         /** Vard 0xRRGGBBAA with extra [opacity] → Android 0xAARRGGBB. */

@@ -113,6 +113,11 @@ pub extern "system" fn Java_dev_vard_host_VardNative_setDark(_: JNIEnv, _: JClas
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_vard_host_VardNative_advance(_: JNIEnv, _: JClass, h: jlong, dt_ms: jfloat) -> jboolean {
+    guard(0, || app(h).map_or(0, |a| a.advance(dt_ms) as jboolean))
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_vard_host_VardNative_resize(_: JNIEnv, _: JClass, h: jlong, width: jfloat, height: jfloat) {
     guard((), || {
         if let Some(a) = app(h) {
@@ -194,14 +199,17 @@ impl vard_runtime::text::TextMeasurer for JniMeasurer {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_vard_host_VardNative_setHost<'l>(mut env: JNIEnv<'l>, _: JClass<'l>, h: jlong, host: JObject<'l>, platform: JString<'l>) {
+pub extern "system" fn Java_dev_vard_host_VardNative_setHost<'l>(mut env: JNIEnv<'l>, _: JClass<'l>, h: jlong, host: JObject<'l>, platform: JString<'l>, platform_text: jboolean) {
     let platform = string(&mut env, &platform).unwrap_or_else(|| "android".into());
     let (Ok(vm), Ok(obj)) = (env.get_java_vm(), env.new_global_ref(&host)) else { return };
     let (Ok(vm2), Ok(obj2)) = (env.get_java_vm(), env.new_global_ref(&host)) else { return };
     guard((), || {
         if let Some(a) = app(h) {
             a.set_host(Box::new(JniHost { vm, obj }), &platform);
-            a.set_measurer(Box::new(JniMeasurer { vm: vm2, obj: obj2 }));
+            // the GPU renderer draws with the core's fonts: then the core measures with them too
+            if platform_text != 0 {
+                a.set_measurer(Box::new(JniMeasurer { vm: vm2, obj: obj2 }));
+            }
         }
     })
 }

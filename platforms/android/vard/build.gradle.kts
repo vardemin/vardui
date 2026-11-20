@@ -41,6 +41,8 @@ val cargoNdk by tasks.registering(Exec::class) {
     val args = mutableListOf("cargo", "ndk")
     vardAbis.forEach { args += listOf("-t", it) }
     args += listOf("-P", "26", "-o", out.absolutePath, "build", "--release", "-p", "vard-ffi")
+    // the GPU renderer (wgpu: Vulkan, GLES fallback); `vard.gpu=false` builds a Canvas-only library
+    if ((project.findProperty("vard.gpu") as String?)?.toBoolean() != false) args += listOf("--features", "gpu")
     commandLine(args)
     val sdk = androidComponents.sdkComponents
     doFirst {

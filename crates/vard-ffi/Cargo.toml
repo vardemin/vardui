@@ -7,13 +7,24 @@ description = "C ABI and JNI surface over vard-runtime for native platform hosts
 
 [lib]
 name = "vard_ffi"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 vard-lang = { path = "../vard-lang" }
 vard-runtime = { path = "../vard-runtime" }
 vard-pkg = { path = "../vard-pkg" }
 jni = { version = "0.21", default-features = false }
+vard-gpu = { path = "../vard-gpu", optional = true }
+wgpu = { version = "30", default-features = false, optional = true }
+pollster = { version = "1", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-sys = { version = "0.6", optional = true }
+
+[features]
+# the GPU renderer and its surface entry points (vard_gpu_* / VardNative.gpu*)
+gpu = ["dep:vard-gpu", "dep:wgpu", "dep:pollster", "dep:raw-window-handle", "dep:ndk-sys"]
 
 [dev-dependencies]
 serde_json = "1"
