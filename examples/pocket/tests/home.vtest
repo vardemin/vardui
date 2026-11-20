@@ -1,0 +1,15 @@
+# Home at the default headless clock (Thu 2026-01-15 09:30) with the sample data
+expect "THURSDAY, 15 JANUARY"
+expect "Good morning"
+expect "Spent $1,144.00 this month"
+expect "$856.00 left"
+expect "3-day streak"
+expect "Groceries"
+expect #tab-home checked
+tap "All notes"
+expect #tab-notes checked
+back
+expect #tab-home checked
+clock 2026-01-15 19:00
+restart
+expect "Good evening"

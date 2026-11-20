@@ -11,7 +11,7 @@
 //! place the overlays) and the image sources still to fetch.
 
 use serde_json::{json, Value};
-use vard_runtime::frame::{Frame, F_DISABLED, F_SECURE};
+use vard_runtime::frame::{Frame, F_DISABLED, F_MULTILINE, F_SECURE};
 
 /// What the JS host needs from a frame, as JSON:
 /// `{dark, back, animating, background, inputs: [...], images: [...]}`.
@@ -31,9 +31,9 @@ pub fn summary(f: &Frame, loaded: impl Fn(&str) -> bool) -> Value {
                 "clip": [r.clip.x, r.clip.y, r.clip.w, r.clip.h],
                 "text": r.text, "placeholder": r.placeholder,
                 "secure": r.flags & F_SECURE != 0, "disabled": r.flags & F_DISABLED != 0,
-                "keyboard": keyboard,
+                "keyboard": keyboard, "multiline": r.flags & F_MULTILINE != 0,
                 "color": hex(r.color), "placeholderColor": hex(r.placeholder_color),
-                "fontPx": r.font_px, "font": r.font, "weight": r.weight,
+                "fontPx": r.font_px, "lineHeight": r.line_h, "font": r.font, "weight": r.weight,
                 "align": align,
                 "opacity": r.opacity, "letterSpacing": r.letter_spacing,
             })

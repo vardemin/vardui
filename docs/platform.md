@@ -22,7 +22,17 @@ on deepLink(url) { route(url) }       // vard://...
 Globals (reactive, read-only): `safeArea` (`top bottom left right`), `keyboardHeight`,
 `backProgress`, `isDark`, `screenWidth`, `screenHeight`, `platform`.
 Functions: `setColorScheme(.dark|.light|.system)`, `openUrl(url)`, `shareText(text)`,
-`haptic(.success)`, `openAppSettings()`.
+`haptic(.success)`, `openAppSettings()`, `now()`.
+
+### Time
+
+`now()` returns milliseconds of **local wall-clock time**: each host adds the device's
+time-zone offset (including daylight saving) — Android `TimeZone.getOffset`, iOS/macOS
+`TimeZone.current`, desktop `localtime_r` / `GetTimeZoneInformation`, web
+`getTimezoneOffset`. Calendar built-ins (`date`, `formatDate`, `addDays`, `addMonths`,
+`startOfDay`, `daysBetween` — see [Language](language.md#statements-function-and-handler-bodies))
+are therefore plain arithmetic and give the same answer everywhere. Keep "today" in state
+and refresh it when the app comes back: `state today = now()` + `on appResume { today = now() }`.
 
 ## Back and predictive back
 

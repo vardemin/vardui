@@ -69,7 +69,9 @@ impl Runtime {
             (None, Cons::Exact(w)) => (Some(w.min(max_w).max(min_w)), hint_w),
             _ => (None, Why::Content),
         };
-        let (mut def_h, mut why_h) = match (node.height, ch) {
+        // a multi-line Input sizes to its `lines` unless the app set a height
+        let height = if node.multiline() && !node.height_set { None } else { node.height };
+        let (mut def_h, mut why_h) = match (height, ch) {
             (Some(h), _) => (Some(h), Why::Fixed),
             (None, Cons::Exact(h)) => (Some(h.min(max_h).max(min_h)), hint_h),
             _ => (None, Why::Content),
@@ -126,6 +128,26 @@ impl Runtime {
                 let node = &self.nodes[n];
                 let w = node.lines.iter().map(|l| l.1).fold(0.0f32, f32::max).ceil();
                 (w, node.lines.len() as f32 * line_h)
+            }
+            Kind::Input if node.multiline() => {
+                let (px, weight, line_h) = node.font_full();
+                let rows = node.input_lines;
+                let face = self.face_of(node);
+                let spacing = node.letter_spacing;
+                let width = iw_lim.unwrap_or(160.0);
+                let key = (face, (px * 8.0) as u32 + weight as u32 * 100_000, (spacing * 8.0) as i32, (width * 8.0) as u32, rows);
+                if node.wrap_key != Some(key) {
+                    // what is shown: the value, or the placeholder while empty
+                    let shown = if node.text.is_empty() { node.placeholder.clone() } else { node.text.clone() };
+                    let italic = node.italic;
+                    let family: std::rc::Rc<str> = node.font_family.clone().or_else(|| self.default_font.clone()).unwrap_or_else(|| std::rc::Rc::from(""));
+                    let req = crate::text::FontReq { face, family: &family, weight, italic };
+                    let lines = self.text.wrap(&shown, &req, px, spacing, Some(width), None);
+                    let node = &mut self.nodes[n];
+                    node.lines = lines;
+                    node.wrap_key = Some(key);
+                }
+                (width.min(160.0), rows as f32 * line_h)
             }
             Kind::Input => {
                 let (_, _, line_h) = node.font_full();
@@ -233,7 +255,18 @@ impl Runtime {
             }
         }
         let max_cross = sizes.iter().map(|s| s.1).fold(0.0f32, f32::max);
-        let cross_size = cross_def.unwrap_or(max_cross);
+        // minWidth/minHeight enlarge a content-sized box: align/justify within the final size
+        let (min_main, min_cross) = {
+            let node = &self.nodes[n];
+            let [l, t, r, b] = node.pad();
+            let (mw, mh) = ((node.min_w - l - r).max(0.0), (node.min_h - t - b).max(0.0));
+            if horizontal {
+                (mw, mh)
+            } else {
+                (mh, mw)
+            }
+        };
+        let cross_size = cross_def.unwrap_or(max_cross.max(min_cross));
         // pass 3: content-sized cross axis — stretch children to the widest/tallest sibling
         if cross_def.is_none() {
             for i in 0..count {
@@ -252,7 +285,7 @@ impl Runtime {
             }
         }
         // positions
-        let main_size = main_def.unwrap_or(used);
+        let main_size = main_def.unwrap_or(if kind == Kind::Scroll { used } else { used.max(min_main) });
         let free = (main_size - used).max(0.0);
         let (mut pos, step) = justify_steps(justify, free, gap, count);
         for i in 0..count {
@@ -398,7 +431,12 @@ impl Runtime {
         }
         let cw = sizes.iter().map(|s| s.0).fold(0.0f32, f32::max);
         let ch = sizes.iter().map(|s| s.1).fold(0.0f32, f32::max);
-        let (bw, bh) = (iw_def.unwrap_or(cw), ih_def.unwrap_or(ch));
+        let (min_w, min_h) = {
+            let node = &self.nodes[n];
+            let [l, t, r, b] = node.pad();
+            ((node.min_w - l - r).max(0.0), (node.min_h - t - b).max(0.0))
+        };
+        let (bw, bh) = (iw_def.unwrap_or(cw.max(min_w)), ih_def.unwrap_or(ch.max(min_h)));
         for i in 0..count {
             let c = self.nodes[n].children[i];
             let child = &mut self.nodes[c];

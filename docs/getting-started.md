@@ -122,4 +122,5 @@ by itself.
 - [Testing and debugging](testing.md) — the action language and the platform simulator.
 - [Working with AI agents](ai-first.md) — how to set up an agent working on a project.
 - Examples: [`examples/`](https://github.com/vardemin/vardui/tree/master/examples) —
-  `todo`, `patterns`, `native`, `showcase`, `firebase`.
+  `todo`, `patterns`, `native`, `showcase`, `pocket` (an all-in-one notes, money, journal
+  and calculators app), `firebase`.

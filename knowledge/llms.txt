@@ -58,7 +58,7 @@ for t, i in todos by t.id { ... }  // i = index (Int)
 for i in range(0, 5) { ... }
 
 ## Expressions
-+ - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback   x! (unwrap)
++ - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback (a ?? b ?? c)   x! (unwrap)
 "Count: {n}" (interpolation; `+` joins only String+String)   list[i]   map["k"] (T?)   s.field
 .name  enum variant or color token, resolved from the expected type (prop, typed var, `x == .all`)
 Lambdas: x => x.done   (a, b) => a + b   x => { stmts }   { stmts } (no params; handlers)
@@ -69,6 +69,15 @@ No: self/this, ?., ++/--, ===, semicolons, imports, classes, modifier chains, `@
 let x = 1 (immutable)  var y = 2 (mutable)  x = v  x += v  x -= v  map["k"] = v  map["k"] = nil (removes)
 if c { } else { }   for x in list { }   return v   print(a, b) (to the log)
 Builtins: range(a, b) -> [Int] (a..b-1), min(a, b), max(a, b), print(...)
+Math: pow(x, y) sqrt(x) log(x) exp(x) -> Float; clamp(x, lo, hi) (Int if all Int)
+
+## Dates (Int ms of local wall-clock time; `now()` already includes the time zone)
+now() -> Int   date(ms) -> DateParts { year month day hour minute second weekday (1 Mon … 7 Sun) }
+dateOf(year, month, day, hour: 0, minute: 0) -> Int   addDays(ms, n)  addMonths(ms, n) (day clamped)
+startOfDay(ms)  daysBetween(from, to) -> Int (calendar days)
+formatDate(ms, "EEEE, d MMMM yyyy HH:mm") — yyyy yy MMMM MMM MM M dd d EEEE EEE HH H mm ss 'text';
+  names follow `locale` (en, ru). Keep `state today = now()`; refresh `on appResume`.
+Headless now() = 2026-01-15 09:30 (Thu); `clock 2026-03-01 10:00` / `clock +1d` moves it.
 
 ## What is mutable
 state, pref, bind params, var locals, fields/elements of those (`todos[i].done = true`,
@@ -79,10 +88,11 @@ computed list (`for t in todos.filter(...)`) are read-only — update the state 
 
 ## Members
 String: count isEmpty | trim() upper() lower() contains(s) startsWith(s) endsWith(s)
-        split(sep) -> [String]  toInt() -> Int?  toFloat() -> Float?
-Int: toFloat() toString() abs()     Float: toInt() round() floor() ceil() abs() fixed(digits) -> String
+        split(sep) -> [String]  toInt() -> Int?  toFloat() -> Float?  replace(a, b)  padStart(n, "0")
+Int: toFloat() toString() abs() format()   Float: toInt() round() floor() ceil() abs() fixed(digits) -> String
+Int/Float: format(digits) -> "1,234.50" grouped for `locale` (ru "1 234,50", de "1.234,50")
 List: count isEmpty first last (T?) | contains(x) indexOf(x) -> Int? map(f) filter(f) find(f) -> T?
-      any(f) all(f) sum() join(sep) sortedBy(key) reversed()
+      any(f) all(f) sum() join(sep) sortedBy(key) reversed() take(n) distinct() max() min() (T?)
       in place (mutable lists only): append(x) insert(i, x) removeAt(i) remove(x) removeWhere(f) clear()
 Map: count isEmpty keys ([String]) values ([T]) | contains(key) | in place: remove(key) clear()
 Struct: construct `Todo(id: 1, title: "A")` (defaults may be omitted); read `t.title`.
@@ -94,6 +104,7 @@ Stack          align justify                  children overlap; z-order = source
 Scroll         gap align                      vertical scrolling column; give it a bounded height (`grow: 1`)
 Text(text)     style size weight color textAlign maxLines strike underline italic font letterSpacing lineHeight
 Input          value (bind String) placeholder onSubmit onChange(fn(String)) secure keyboard size weight font color placeholderColor
+               lines (N > 1: multi-line text area N lines tall; Enter = newline)
 Image(src)     fit tint                       project file ("assets/logo.png") or https URL
 Spacer         flexible empty space (grow: 1 by default)
 align (cross axis): .start .center .end .stretch (default)
@@ -136,7 +147,8 @@ translation). Test: `locale ru` action, then `expect "Привет, Ann"`.
 ## Color tokens (light/dark automatically)
 .background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear
 Use .text/.muted on .background/.surface, .onPrimary on .primary. Custom: `theme { brand: #... }`.
-Package `tailwind` (`vard add tailwind`): Tailwind palette (.slate50 … .rose950) + components (TwButton TwCard Badge Avatar Field).
+Package `tailwind` (`vard add tailwind`): Tailwind palette (.slate50 … .rose950) + components (TwButton TwCard Badge
+Avatar Field TextArea Segmented Chip Progress IconButton). Your `theme { }` overrides a package's tokens.
 
 ## Std views (source: `vard doc std`)
 Button(label, onTap: fn() = {}, kind: .filled|.tonal|.outline|.text = .filled, enabled: Bool = true)
@@ -145,7 +157,7 @@ Card { ... } (padded surface, slot)                Divider()
 A design system is plain Vard views: copy std's pattern (tokens + params with enum `kind`).
 
 ## Platform (std; details: `vard doc native`)
-Values (reactive, read-only): safeArea (Insets: top bottom left right) keyboardHeight backProgress
+Time: now() -> Int (see Dates). Values (reactive, read-only): safeArea (Insets: top bottom left right) keyboardHeight backProgress
   isDark screenWidth screenHeight platform locale
 Events (`on name(args) { }`): appear back appResume appPause deepLink(url)
   pushReceived(message) pushOpened(message) pushTokenChanged(token)
@@ -181,8 +193,11 @@ mock NAME VALUE | resolve NAME VALUE | send NAME VALUE | pending          (VALUE
 emit EVENT [ARGS] | push received|opened "T" "B" [{data}] | back [P|cancel]
 insets T B [L R] | keyboard H | locale TAG | permission NAME STATUS | permission NAME answer STATUS
 storage | restart (cold start keeping prefs/secure/permissions) | wait [MS] (animation clock)
+clock 2026-03-01 [10:30] | clock +3d/+2h/-15m (what now() returns)
 expect SEL|"text"   expect no "text"   expect SEL checked|unchecked|enabled|disabled|offscreen|visible
-SEL: @12 (node id from `tree`) | #id | "label" (exact, then whole word, then substring)
+expect SEL "text" (that element's text / Input value contains it; no-break spaces match " ")
+SEL: @12 (node id from `tree`) | #id | "label" (exact, then whole word, then substring; on a tie
+the one on top and on screen wins, e.g. a sheet's button over the list behind it)
 Mutating actions print a diff: `+` added, `-` removed, `~` changed lines.
 .vtest file = actions + optional header lines: @view Name  @size 390x844  @dark  @app ../path
 Each run starts fresh and is deterministic: replay the whole sequence, don't keep sessions.

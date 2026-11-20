@@ -26,7 +26,7 @@ object CoreModules {
     fun all(): List<VardModule> = listOf(SystemModule(), PrefsModule(), SecureModule(), PermissionsModule(), NotificationsModule())
 }
 
-/** openUrl, shareText, haptic, openAppSettings. */
+/** now, openUrl, shareText, haptic, openAppSettings. */
 class SystemModule : VardModule {
     private lateinit var host: VardHost
     override fun install(host: VardHost) {
@@ -43,6 +43,11 @@ class SystemModule : VardModule {
     }
 
     override val functions = mapOf<String, (VardCall) -> Any?>(
+        // local wall-clock milliseconds: the zone offset (with DST) is applied here
+        "now" to { _ ->
+            val t = System.currentTimeMillis()
+            t + java.util.TimeZone.getDefault().getOffset(t)
+        },
         "openUrl" to { c -> start(Intent(Intent.ACTION_VIEW, Uri.parse(c.string(0)))) },
         "shareText" to { c ->
             val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, c.string(0))

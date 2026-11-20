@@ -3,7 +3,7 @@ package dev.vard.host
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Decoded `vard_frame` buffer (format v2: crates/vard-ffi/src/frame.rs). Units are dp. */
+/** Decoded `vard_frame` buffer (format v3: crates/vard-runtime/src/frame.rs). Units are dp. */
 class Frame(val dark: Boolean, val backEnabled: Boolean, val animating: Boolean, val background: Int, val records: List<Record>) {
 
     class Line(val text: String, val width: Float)
@@ -53,6 +53,8 @@ class Frame(val dark: Boolean, val backEnabled: Boolean, val animating: Boolean,
         val italic get() = flags and F_ITALIC != 0
         val disabled get() = flags and F_DISABLED != 0
         val underline get() = flags and F_UNDERLINE != 0
+        /** Input with `lines` > 1: wraps, Enter inserts a newline. */
+        val multiline get() = flags and F_MULTILINE != 0
         val clipsSelf get() = cx > x || cy > y || cx + cw < x + w || cy + ch < y + h
         val roundedClip get() = clipRadii.any { it > 0f }
         val uniformRadius get() = radii.all { it == radii[0] }
@@ -78,8 +80,9 @@ class Frame(val dark: Boolean, val backEnabled: Boolean, val animating: Boolean,
         const val F_DISABLED = 16
         const val F_CHECKED = 32
         const val F_UNDERLINE = 64
+        const val F_MULTILINE = 128
 
-        private const val VERSION = 2
+        private const val VERSION = 3
 
         fun decode(bytes: ByteArray): Frame? {
             if (bytes.size < 16) return null

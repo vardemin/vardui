@@ -9,7 +9,8 @@
 //! ```text
 //! vard-desktop [PATH] [View] [--size 390x844] [--shot FILE.png] [--scale 2]
 //! ```
-//! Keys: Esc = back (or leave the field), Tab = next field, Enter = submit, ⌘/Ctrl+R = reload.
+//! Keys: Esc = back (or leave the field), Tab = next field, Enter = submit (a newline in a
+//! multi-line Input, where Shift+Enter submits), ⌘/Ctrl+R = reload.
 
 mod platform;
 
@@ -283,7 +284,14 @@ impl Host {
                 }
             }
             Key::Named(NamedKey::Enter) if self.focused != 0 => {
-                app.submit(self.focused);
+                // a multi-line Input (`lines` > 1) takes the newline; Shift+Enter there submits
+                let multiline = self.frame.as_ref().and_then(|f| f.records.iter().find(|r| r.uid == self.focused)).is_some_and(|r| r.flags & vard_runtime::frame::F_MULTILINE != 0);
+                if multiline && !self.mods.shift_key() {
+                    self.type_text("
+");
+                } else {
+                    app.submit(self.focused);
+                }
             }
             Key::Named(NamedKey::Backspace) if self.focused != 0 => {
                 if let Some(mut t) = self.input_text(self.focused) {

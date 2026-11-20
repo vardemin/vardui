@@ -2,18 +2,38 @@
 view App {
   state email = ""
   state saved = false
+  state bio = ""
+  state plan = "Monthly"
+  state tag = "All"
+  fn clear() {
+    email = ""
+    bio = ""
+  }
   Column(padding: 24, gap: 16, background: .background, grow: 1) {
     TwCard {
       Row(gap: 12, align: .center) {
         Avatar("LA", size: 40, color: .indigo600)
         Text("Leslie Alexander", size: 14, weight: .semibold, grow: 1)
         Badge(saved ? "Saved" : "Draft", tone: saved ? .green : .gray)
+        IconButton("✕", label: "Clear", onTap: clear)
       }
-      Field("Email", value: email, placeholder: "you@example.com")
+      Field("Email", value: email, placeholder: "you@example.com", keyboard: .email)
+      TextArea("About", value: bio, placeholder: "A few words about you", lines: 3)
       Row(gap: 8, justify: .end) {
         TwButton("Cancel", onTap: { email = "" }, variant: .ghost)
         TwButton("Save", onTap: { saved = true }, enabled: email != "")
       }
+    }
+    TwCard {
+      Segmented(options: ["Monthly", "Yearly"], selected: plan)
+      Text(plan == "Monthly" ? "$12 / month" : "$120 / year", size: 20, weight: .bold)
+      Row(wrap: true, gap: 8) {
+        for t in ["All", "Design", "Code"] by t {
+          Chip(t, selected: tag == t, onTap: { tag = t })
+        }
+      }
+      Text("Profile {bio.count * 100 / 40}% complete", size: 13, color: .muted)
+      Progress(value: bio.count / 40.0, color: .emerald500)
     }
   }
 }

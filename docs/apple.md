@@ -75,7 +75,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 | Drawing | `vard_gpu_create_metal` on the view's `CAMetalLayer`; every frame is the core's draw list rendered by `vard-gpu` (see [Rendering](rendering.md)) — the same pixels as `vard run --do "shot"` |
 | Animations | `CADisplayLink` runs only while the frame header says `animating` (or scroll inertia moves): `vard_advance(dt)` then render; idle screens cost nothing |
 | Touch | tap → `vard_tap`; pan → `vard_scroll` with inertia; macOS: click, scroll wheel / trackpad |
-| Text input | a borderless `UITextField`/`NSTextField` over each `Input` (IME, autofill, selection), styled from the record (font, color, placeholder, `secure`, keyboard type) |
+| Text input | a borderless `UITextField`/`NSTextField` over each `Input` (IME, autofill, selection), styled from the record (font, color, placeholder, `secure`, keyboard type); a multi-line `Input` (`lines:`) is a `UITextView` with a placeholder label on iOS and a wrapping `NSTextField` where Return inserts a newline on macOS |
 | Back | iOS: the left-edge swipe drives `backProgress` and commits past 30%; macOS: Esc or ⌘[ — only while an `on back` handler is enabled |
 | Safe area and keyboard | `safeAreaInsets` and the keyboard frame go to `vard_set_insets` (`safeArea`, `keyboardHeight`) |
 | Appearance, locale | trait collection / effective appearance → `isDark`; `Locale.preferredLanguages` → `locale`; the status bar follows the app's theme |

@@ -140,7 +140,7 @@ devices:
    (create/set/insert/remove), the host applies them per frame.
    *Done:* `crates/vard-ffi` (C ABI + JNI) and `platforms/android` (the `:vard` library with
    `VardActivity`, the `:app` shell, the `firebase` package's native module). The host gets
-   the whole frame — a flat list of draw records (format v2: shadows, gradients, per-corner
+   the whole frame — a flat list of draw records (format v3: shadows, gradients, per-corner
    radii, fonts, transforms, `crates/vard-ffi/src/frame.rs`); hit-testing and `onTap`
    bubbling stay in the core, `Input` is a native `EditText` over the Canvas;
    `platforms/apple` — the Swift package `VardHost` for iOS and macOS (`VardView` on a

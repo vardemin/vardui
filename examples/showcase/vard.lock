@@ -1,4 +1,4 @@
 # vard.lock — written by `vard install`. Commit it; review caps= changes like code.
 lock 1
 root deps=tailwind
-pkg tailwind 1.0.0 src=path:../../packages/tailwind caps= deps=
+pkg tailwind 1.1.0 src=path:../../packages/tailwind caps= deps=

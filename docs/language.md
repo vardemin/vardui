@@ -121,6 +121,7 @@ Elements are not values: they cannot be stored in a variable or returned from a 
 
 ```
 + - * / %   == != < <= > >=   && || !   cond ? a : b   a ?? fallback   x! (unwrap)
+a ?? b ?? c        // `??` is right-associative: optional fallbacks chain
 list[i]   map["k"] (T?)   s.field   .name (an enum variant or a color token)
 x => x.done   (a, b) => a + b   x => { stmts }   { stmts }   // lambdas
 ```
@@ -142,7 +143,22 @@ if c { } else { }  for x in list { }  return v   print(a, b)
 ```
 
 Built-in functions: `range(a, b)` (a to b-1), `min`, `max`, `print` (to the log:
-`vard run --do log`).
+`vard run --do log`), and for everyday apps:
+
+| Function | Result |
+|---|---|
+| `pow(x, y)` `sqrt(x)` `log(x)` `exp(x)` | `Float` (finance math: annuities, compound interest) |
+| `clamp(x, lo, hi)` | `Int` when all three are `Int`, else `Float` |
+| `now()` | `Int` — milliseconds of local wall-clock time (std `extern fn`, answered by the host) |
+| `date(ms)` | `DateParts { year month day hour minute second weekday }` (weekday 1 = Monday … 7 = Sunday) |
+| `dateOf(year, month, day, hour: 0, minute: 0)` | `Int` timestamp; out-of-range months and days roll over |
+| `addDays(ms, n)` `addMonths(ms, n)` | `Int`; `addMonths` clamps the day (Jan 31 + 1 month = Feb 28) |
+| `startOfDay(ms)` `daysBetween(from, to)` | midnight of the day; whole calendar days between two timestamps |
+| `formatDate(ms, pattern)` | `String`: `yyyy yy MMMM MMM MM M dd d EEEE EEE HH H mm ss`, `'literal'`; names follow `locale` (en, ru) |
+
+Timestamps already include the device's time zone, so calendar math is plain arithmetic and
+is the same on every platform and in headless tests (where `now()` is 2026-01-15 09:30 until
+the `clock` action moves it — see [Testing](testing.md)).
 
 ## What is mutable
 
@@ -160,13 +176,17 @@ receives a struct received a copy. The model never has to think about aliasing.
 
 | Type | Properties | Methods |
 |---|---|---|
-| `String` | `count isEmpty` | `trim() upper() lower() contains(s) startsWith(s) endsWith(s) split(sep) toInt() toFloat()` |
-| `Int` | | `toFloat() toString() abs()` |
-| `Float` | | `toInt() round() floor() ceil() abs() fixed(digits)` |
-| `[T]` | `count isEmpty first last` | `contains indexOf map filter find any all sum join sortedBy reversed`; in place: `append insert removeAt remove removeWhere clear` |
+| `String` | `count isEmpty` | `trim() upper() lower() contains(s) startsWith(s) endsWith(s) split(sep) toInt() toFloat() replace(a, b) padStart(n, fill)` |
+| `Int` | | `toFloat() toString() abs() format()` |
+| `Float` | | `toInt() round() floor() ceil() abs() fixed(digits) format(digits)` |
+| `[T]` | `count isEmpty first last` | `contains indexOf map filter find any all sum join sortedBy reversed take(n) distinct() max() min()`; in place: `append insert removeAt remove removeWhere clear` |
 | `[String: T]` | `count isEmpty keys values` | `contains(key)`; in place: `remove(key) clear()` |
 
 Properties are read without `()`, methods are called with `()` (`E0215` with a fix).
+
+`x.format(2)` is `fixed` plus digit grouping for the user's `locale`: `1,234.50` (en),
+`1 234,50` (ru, fr, …; the separator is a no-break space), `1.234,50` (de, es, …).
+`list.max()` / `min()` return `T?` (nil for an empty list): `values.max() ?? 1`.
 
 ## Themes and tokens
 
@@ -174,6 +194,8 @@ Colors in views are set through tokens only — then dark mode just works:
 `.background .surface .text .muted .primary .onPrimary .border .danger .success .warning .clear`.
 Custom tokens are declared in `theme { }` (light values) and `theme dark { }`.
 `font: "Inter"` in a theme sets the default family (font files go into the project's `fonts/`).
+The app's own `theme { }` wins over a package's: override a single token such as `success`
+without forking the package.
 Details: [UI](ui.md#tokens-and-themes).
 
 ## Localized text

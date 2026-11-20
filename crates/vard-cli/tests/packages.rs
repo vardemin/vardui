@@ -138,7 +138,7 @@ fn bundled_packages_pass_the_gate() {
         assert!(o.contains("dry run") && !o.contains("warn"), "{}: {}", p, o);
     }
     let o = env.ok(&["search", "tailwind", "button"]);
-    assert!(o.starts_with("tailwind 1.0.0 [builtin]"), "{}", o);
+    assert!(o.starts_with("tailwind 1.1.0 [builtin]"), "{}", o);
     assert!(env.ok(&["doc", "firebase"]).contains("## API (firebase"));
 }
 

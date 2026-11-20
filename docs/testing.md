@@ -27,12 +27,21 @@ One action per line or separated by `;`. The full list: `vard doc actions`.
 | `find SEL` · `state` · `log` · `stats` · `lint` | inspection |
 | `expect SEL` · `expect "text"` · `expect no "text"` | assertions |
 | `expect SEL checked\|unchecked\|enabled\|disabled\|offscreen\|visible` | element state |
+| `expect SEL "text"` | the element's text (an Input: its value) contains `text` — `expect #total "$42.00"` |
 | `theme light\|dark` · `size W H` · `insets T B [L R]` · `keyboard H` · `locale TAG` | environment |
+| `clock 2026-03-01 [10:30]` · `clock +1d` / `+2h` / `-15m` | what `now()` returns (default 2026-01-15 09:30, a Thursday) |
 | `shot FILE.png [scale]` | a screenshot (only to judge visual design) |
 
 Selectors: `@12` (id from `tree`), `#email` (the `id:` prop), `"Sign in"` (exact label, then
-whole word, then substring). Mutating actions print a diff of the tree: `+` added,
+whole word, then substring). When a label matches several elements, the one a finger could
+reach wins — on screen and not covered (a bottom sheet's "Save" over the list behind it);
+otherwise the error lists the candidates. No-break spaces (`1 234,50 ₽` in Russian number
+formatting) match a plain space. Mutating actions print a diff of the tree: `+` added,
 `-` removed, `~` changed.
+
+Dates are deterministic: `now()` starts at 2026-01-15 09:30 in every run, `clock` moves it,
+and `restart` keeps it — so "the streak survives until tomorrow" is a three-line test:
+`clock +1d`, `restart`, `expect "4 days"`.
 
 ## The platform simulator
 

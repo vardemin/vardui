@@ -6,12 +6,13 @@
 //! are `u32 byte length` + UTF-8.
 //!
 //! ```text
-//! header   magic "VRDF" | u16 version (=2) | u16 flags (bit0 dark, bit1 back handled by app,
+//! header   magic "VRDF" | u16 version (=3) | u16 flags (bit0 dark, bit1 back handled by app,
 //!          bit2 animations running: call `advance` on the next vsync and draw again)
 //!          | u32 background | u32 count
 //! record   u32 uid
 //!          u8 kind     0 Column 1 Row 2 Stack 3 Scroll 4 Text 5 Input 6 Image 7 Spacer 8 Grid
 //!          u8 flags    1 background  2 strike  4 secure  8 italic  16 disabled  32 checked  64 underline
+//!                      128 multiline (Input with `lines` > 1: wraps, Enter inserts a newline)
 //!          u8 textAlign 0 start 1 center 2 end 3 stretch
 //!          u8 fit      Image: 0 cover 1 contain 2 fill
 //!          f32 x y w h            visual rect
@@ -32,6 +33,8 @@
 //!          str text               Text: text, Input: value, Image: src
 //!          str placeholder
 //!          u32 lineCount, then per line: str text | f32 width (reference engine)
+//!                                 Text: its lines; multi-line Input: the wrapped value (or
+//!                                 placeholder while empty), drawn top-down from `y + padTop`
 //! ```
 //!
 //! Only nodes that paint something are emitted (fill, gradient, border, shadow, Text, Input,
@@ -47,7 +50,7 @@ use crate::raster::rt_shadow;
 use crate::rt::{NodeKey, Runtime};
 
 pub const MAGIC: &[u8; 4] = b"VRDF";
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 
 pub const F_BACKGROUND: u8 = 1;
 pub const F_STRIKE: u8 = 2;
@@ -56,6 +59,7 @@ pub const F_ITALIC: u8 = 8;
 pub const F_DISABLED: u8 = 16;
 pub const F_CHECKED: u8 = 32;
 pub const F_UNDERLINE: u8 = 64;
+pub const F_MULTILINE: u8 = 128;
 
 pub const H_DARK: u16 = 1;
 pub const H_BACK: u16 = 2;
@@ -179,6 +183,9 @@ fn node(rt: &Runtime, key: NodeKey, alpha: f32, clip: Rect, clip_radii: [f32; 4]
         if n.underline {
             flags |= F_UNDERLINE;
         }
+        if n.multiline() {
+            flags |= F_MULTILINE;
+        }
         w.u32(n.uid);
         w.u8(kind_code(n.kind));
         w.u8(flags);
@@ -237,7 +244,7 @@ fn node(rt: &Runtime, key: NodeKey, alpha: f32, clip: Rect, clip_radii: [f32; 4]
         w.str(family);
         w.str(&n.text);
         w.str(&n.placeholder);
-        if n.kind == Kind::Text {
+        if n.kind == Kind::Text || n.multiline() {
             w.u32(n.lines.len() as u32);
             for (line, lw) in &n.lines {
                 w.str(line);

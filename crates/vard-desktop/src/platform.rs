@@ -64,6 +64,72 @@ impl DesktopHost {
     }
 }
 
+/// `now()`: local wall-clock milliseconds (UTC plus the system time zone's current offset).
+pub fn local_now_ms() -> i64 {
+    let utc = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    utc + utc_offset_secs(utc / 1000) * 1000
+}
+
+#[cfg(unix)]
+fn utc_offset_secs(t: i64) -> i64 {
+    // struct tm of glibc, musl and macOS: nine ints, then tm_gmtoff and tm_zone
+    #[repr(C)]
+    struct Tm {
+        ints: [i32; 9],
+        gmtoff: std::ffi::c_long,
+        zone: *const std::ffi::c_char,
+    }
+    extern "C" {
+        fn localtime_r(t: *const i64, out: *mut Tm) -> *mut Tm;
+    }
+    let mut tm = Tm { ints: [0; 9], gmtoff: 0, zone: std::ptr::null() };
+    // SAFETY: both pointers are valid for the call; localtime_r is thread-safe.
+    let ok = unsafe { !localtime_r(&t, &mut tm).is_null() };
+    if ok {
+        tm.gmtoff as i64
+    } else {
+        0
+    }
+}
+
+#[cfg(windows)]
+fn utc_offset_secs(_: i64) -> i64 {
+    #[repr(C)]
+    struct SystemTime([u16; 8]);
+    #[repr(C)]
+    struct TimeZoneInformation {
+        bias: i32,
+        standard_name: [u16; 32],
+        standard_date: SystemTime,
+        standard_bias: i32,
+        daylight_name: [u16; 32],
+        daylight_date: SystemTime,
+        daylight_bias: i32,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetTimeZoneInformation(out: *mut TimeZoneInformation) -> u32;
+    }
+    let mut z = TimeZoneInformation {
+        bias: 0,
+        standard_name: [0; 32],
+        standard_date: SystemTime([0; 8]),
+        standard_bias: 0,
+        daylight_name: [0; 32],
+        daylight_date: SystemTime([0; 8]),
+        daylight_bias: 0,
+    };
+    // SAFETY: `z` is a properly laid out TIME_ZONE_INFORMATION the call fills in.
+    let state = unsafe { GetTimeZoneInformation(&mut z) };
+    let bias = z.bias + if state == 2 { z.daylight_bias } else { z.standard_bias };
+    -(bias as i64) * 60
+}
+
+#[cfg(not(any(unix, windows)))]
+fn utc_offset_secs(_: i64) -> i64 {
+    0
+}
+
 /// Run a system command without waiting for it; false if it could not start.
 fn spawn(cmd: &str, args: &[&str]) -> bool {
     Command::new(cmd).args(args).stdout(Stdio::null()).stderr(Stdio::null()).spawn().is_ok()
@@ -116,6 +182,7 @@ impl NativeHost for DesktopHost {
         let args: Vec<Value> = serde_json::from_str(args_json).unwrap_or_default();
         let s = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or("").to_string();
         let out = match name {
+            "now" => json!(local_now_ms()),
             "prefGet" => self.prefs.get(&s(0)).map(|v| json!(v)).unwrap_or(Value::Null),
             "prefSet" => {
                 self.prefs.insert(s(0), s(1));
@@ -184,6 +251,9 @@ mod tests {
         assert_eq!(again.call("requestPermission", r#"["camera",{"$callback":7}]"#).as_deref(), Some("null"));
         assert_eq!(again.answers.borrow().as_slice(), &[(7, "\"denied\"".to_string())]);
         assert_eq!(again.call("nope", "[]"), None);
+        let now: i64 = again.call("now", "[]").unwrap().parse().unwrap();
+        let utc = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        assert!((now - utc).abs() <= 15 * 3_600_000, "local time within 15 h of UTC");
         let _ = std::fs::remove_dir_all(config_dir(&app));
     }
 }

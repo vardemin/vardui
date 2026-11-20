@@ -1,0 +1,95 @@
+// Shared pieces of the Pocket design system, on top of the `tailwind` package.
+
+// Big screen title under the status bar, with an optional trailing action.
+view ScreenHeader(title: String, subtitle: String = "", action: String = "", actionLabel: String = "", onAction: fn() = {}) {
+  Row(safeArea: .top, paddingX: 20, paddingTop: 12, paddingBottom: 8, align: .center, gap: 12) {
+    Column(grow: 1, gap: 2) {
+      if subtitle != "" { Text(subtitle.upper(), size: 12, weight: .semibold, letterSpacing: 1.2, color: .muted) }
+      Text(title, size: 30, lineHeight: 36, weight: .bold, letterSpacing: -0.6, role: .heading)
+    }
+    if action != "" { IconButton(action, label: actionLabel, onTap: onAction, variant: .primary) }
+  }
+}
+
+// Modal page header: Cancel · title · Save.
+view SheetHeader(title: String, onClose: fn(), onSave: fn() = {}, saveLabel: String = "", canSave: Bool = true, closeLabel: String = "Cancel") {
+  Row(paddingX: 8, paddingY: 4, align: .center, borderBottom: 1, borderColor: .ring) {
+    TwButton(closeLabel, onTap: onClose, variant: .ghost, size: .sm)
+    Text(title, size: 16, weight: .semibold, textAlign: .center, grow: 1, role: .heading)
+    if saveLabel != "" {
+      TwButton(saveLabel, onTap: onSave, variant: .primary, size: .sm, enabled: canSave)
+    } else {
+      Spacer(grow: 0, width: 72)
+    }
+  }
+}
+
+view SectionTitle(title: String, trailing: String = "", onTrailing: fn() = {}) {
+  Row(align: .center, paddingTop: 8) {
+    Text(title, size: 16, weight: .semibold, grow: 1)
+    if trailing != "" {
+      Row(minHeight: 44, minWidth: 44, align: .center, justify: .end, role: .link, label: trailing, onTap: onTrailing) {
+        Text(trailing, size: 14, weight: .medium, color: .primary)
+      }
+    }
+  }
+}
+
+view EmptyState(icon: String, title: String, hint: String) {
+  Column(paddingY: 40, gap: 8, align: .center) {
+    Row(width: 56, height: 56, radius: 28, background: .accent, align: .center, justify: .center) {
+      Text(icon, size: 24, color: .onAccent)
+    }
+    Text(title, size: 16, weight: .semibold, textAlign: .center)
+    Text(hint, size: 14, color: .muted, textAlign: .center)
+  }
+}
+
+// Letter avatar of a money category.
+view CategoryIcon(c: Category, size: Float = 40) {
+  // bg-amber-100 text-amber-700; dark: bg-amber-700 text-white
+  Row(width: size, height: size, radius: size * 0.3, background: isDark ? c.ink : c.soft, align: .center, justify: .center) {
+    Text(c.letter, size: size * 0.4, weight: .bold, color: isDark ? #FFFFFF : c.ink)
+  }
+}
+
+// Small labelled number on a tinted tile.
+view StatTile(label: String, value: String, tone: Color = .text) {
+  Column(grow: 1, padding: 14, gap: 2, radius: 12, background: .card, border: 1, borderColor: .ring) {
+    Text(label, size: 12, weight: .medium, color: .muted)
+    Text(value, size: 17, weight: .bold, maxLines: 1, color: tone)
+  }
+}
+
+// Vertical bars with labels underneath; values scale to the largest one.
+view BarChart(values: [Float], labels: [String], highlight: Int = -1, color: Color = .primary, height: Float = 120) {
+  Row(height: height + 24, gap: 8, align: .end) {
+    for i in range(0, values.count) {
+      Column(grow: 1, gap: 6, align: .center) {
+        Column(height: max(4.0, values[i] / max(1.0, values.max() ?? 1.0) * height), alignSelf: .stretch, radius: 6,
+               background: i == highlight ? color : .accent, animate: .spring)
+        Text(labels[i], size: 11, weight: i == highlight ? .bold : .regular, color: i == highlight ? .text : .muted, maxLines: 1)
+      }
+    }
+  }
+}
+
+// Tab bar: 5 destinations, glyph + label, safe-area aware.
+view TabBar(bind tab: Tab) {
+  Row(safeArea: .bottom, paddingX: 8, paddingTop: 6, background: .card, borderTop: 1, borderColor: .ring) {
+    TabItem("⌂", label: "Home", selected: tab == .home, onTap: { tab = .home })
+    TabItem("✎", label: "Notes", selected: tab == .notes, onTap: { tab = .notes })
+    TabItem("◔", label: "Money", selected: tab == .money, onTap: { tab = .money })
+    TabItem("☾", label: "Journal", selected: tab == .journal, onTap: { tab = .journal })
+    TabItem("÷", label: "Calc", selected: tab == .calc, onTap: { tab = .calc })
+  }
+}
+
+view TabItem(icon: String, label: String, selected: Bool, onTap: fn()) {
+  Column(grow: 1, minHeight: 52, gap: 2, align: .center, justify: .center, role: .button, label: label, checked: selected, onTap: onTap, id: "tab-{label.lower()}") {
+    Row(width: 48, height: 28, radius: 14, align: .center, justify: .center, background: selected ? .accent : .clear, animate: .easeOut) {
+      Text(icon, size: 17, weight: .bold, color: selected ? .onAccent : .muted)
+    }
+    Text(label, size: 11, weight: selected ? .semibold : .medium, color: selected ? .text : .muted)
+  }
+}

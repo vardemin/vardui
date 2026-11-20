@@ -13,7 +13,7 @@ props: `vard doc common`. All of it is generated from one registry
 | `Stack` | `align justify` | children overlap; z-order = source order; a `grow` child fills the height |
 | `Scroll` | `gap align` | a vertically scrolling column; needs a bounded height (`grow: 1`) |
 | `Text(text)` | `style size weight color textAlign maxLines strike underline italic font letterSpacing lineHeight` | text |
-| `Input` | `value` (bind String) `placeholder onSubmit onChange secure keyboard size weight font color placeholderColor` | text field; on devices a native editor over the frame |
+| `Input` | `value` (bind String) `placeholder onSubmit onChange secure keyboard size weight font color placeholderColor lines` | text field; on devices a native editor over the frame. `lines: 5` makes a multi-line text area 5 lines tall: text wraps, Enter inserts a newline (Shift+Enter submits on desktop and web) |
 | `Image(src)` | `fit tint` | a project file (`"assets/logo.png"`) or an https URL |
 | `Spacer` | | flexible empty space (`grow: 1` by default) |
 

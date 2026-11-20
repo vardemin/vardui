@@ -166,6 +166,7 @@ const INPUT: &[PropDef] = &[
     p("font", PTy::Str, "font family"),
     p("color", PTy::Color, "text color"),
     p("placeholderColor", PTy::Color, "placeholder color (default .muted)"),
+    p("lines", PTy::Int, "visible text lines (default 1); > 1 = multi-line: text wraps, Enter inserts a newline, height follows"),
 ];
 
 const IMAGE: &[PropDef] = &[
@@ -181,7 +182,7 @@ pub const ELEMENTS: &[ElemDef] = &[
     ElemDef { name: "Stack", positional: None, props: STACK, children: true, doc: "overlays children on top of each other (z-order = source order)" },
     ElemDef { name: "Scroll", positional: None, props: SCROLL, children: true, doc: "vertical scrolling column; needs a bounded height (usually `grow: 1`)" },
     ElemDef { name: "Text", positional: Some("text"), props: TEXT, children: false, doc: "text run; wraps to the available width" },
-    ElemDef { name: "Input", positional: None, props: INPUT, children: false, doc: "single-line text field" },
+    ElemDef { name: "Input", positional: None, props: INPUT, children: false, doc: "text field; `lines: 5` makes it a multi-line text area" },
     ElemDef { name: "Image", positional: Some("src"), props: IMAGE, children: false, doc: "bitmap image" },
     ElemDef { name: "Spacer", positional: None, props: &[], children: false, doc: "flexible empty space (grow: 1 by default)" },
 ];
@@ -234,6 +235,27 @@ pub fn shadow_params(name: &str) -> Option<(f32, f32, f32)> {
         "xxl" => (25.0, 50.0, 0.25),
         _ => return None,
     })
+}
+
+/// Built-in functions beyond `print range min max t`: (name, parameter names, signature and doc).
+/// Dates are Int milliseconds of local wall-clock time (`now()` from std).
+pub const BUILTIN_FNS: &[(&str, &[&str], &str)] = &[
+    ("pow", &["x", "y"], "pow(x, y) -> Float — x raised to the power y"),
+    ("sqrt", &["x"], "sqrt(x) -> Float"),
+    ("log", &["x"], "log(x) -> Float — natural logarithm"),
+    ("exp", &["x"], "exp(x) -> Float — e to the power x"),
+    ("clamp", &["x", "lo", "hi"], "clamp(x, lo, hi) — x limited to lo..hi (Int if all are Int, else Float)"),
+    ("date", &["ms"], "date(ms) -> DateParts { year month day hour minute second weekday (1 = Mon … 7 = Sun) }"),
+    ("dateOf", &["year", "month", "day", "hour", "minute"], "dateOf(year, month, day, hour: 0, minute: 0) -> Int — a timestamp; month/day overflow rolls over"),
+    ("addDays", &["ms", "days"], "addDays(ms, days) -> Int"),
+    ("addMonths", &["ms", "months"], "addMonths(ms, months) -> Int — the day is clamped to the month (Jan 31 + 1 = Feb 28)"),
+    ("startOfDay", &["ms"], "startOfDay(ms) -> Int — midnight of that day"),
+    ("daysBetween", &["from", "to"], "daysBetween(from, to) -> Int — whole calendar days"),
+    ("formatDate", &["ms", "pattern"], "formatDate(ms, \"d MMM yyyy, HH:mm\") -> String — yyyy yy MMMM MMM MM M dd d EEEE EEE HH H mm ss, 'literal'; month/weekday names follow `locale` (en, ru)"),
+];
+
+pub fn builtin_fn(name: &str) -> Option<&'static [&'static str]> {
+    BUILTIN_FNS.iter().find(|(n, _, _)| *n == name).map(|(_, p, _)| *p)
 }
 
 /// Read-only reactive values provided by the runtime/host: (name, type, doc).
@@ -304,6 +326,9 @@ pub const ELEM_ALIASES: &[(&str, &str)] = &[
     ("Label", "Text"),
     ("TextView", "Text"),
     ("TextField", "Input"),
+    ("TextArea", "Input"),
+    ("TextEditor", "Input"),
+    ("Textarea", "Input"),
     ("TextInput", "Input"),
     ("EditText", "Input"),
     ("SecureField", "Input"),
@@ -365,6 +390,8 @@ pub const PROP_ALIASES: &[(&str, &str)] = &[
     ("onSubmitEditing", "onSubmit"),
     ("lineLimit", "maxLines"),
     ("numberOfLines", "maxLines"),
+    ("rows", "lines"),
+    ("minLines", "lines"),
     ("testID", "id"),
     ("testId", "id"),
     ("key", "id"),

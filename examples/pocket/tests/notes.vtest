@@ -1,0 +1,30 @@
+# Write a multi-line note, find it, pin it; it survives a cold start
+tap #tab-notes
+expect "3 notes"
+tap "New note"
+type #title "Packing list"
+type #body "Passport\nCharger\nSunglasses and a book for the long flight"
+expect "Edited 15 Jan, 09:30"
+tap "Color violet"
+expect "Color violet" checked
+tap "Pin"
+tap "Done"
+expect "4 notes"
+type #search "sunglasses"
+expect "Packing list"
+expect no "Groceries"
+type #search "zzz"
+expect "Nothing found"
+type #search ""
+restart
+tap #tab-notes
+expect "Packing list"
+tap "Packing list"
+expect "Pinned note"
+tap "Delete"
+expect "3 notes"
+expect no "Packing list"
+# an empty new note is discarded
+tap "New note"
+tap "‹ Notes"
+expect "3 notes"

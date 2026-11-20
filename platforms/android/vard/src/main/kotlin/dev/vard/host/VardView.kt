@@ -570,6 +570,8 @@ class VardView(
                 }
             }
             setOnEditorActionListener { _, actionId, event ->
+                // a multi-line Input (`lines` > 1): Enter is a newline, not a submit
+                if (bound?.multiline == true) return@setOnEditorActionListener false
                 val enter = event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
                 if (actionId == EditorInfo.IME_ACTION_DONE || enter) {
                     onInputSubmit(uid)
@@ -588,16 +590,29 @@ class VardView(
                     topMargin = (r.y * d).roundToInt()
                 }
             }
-            if (prev == null || prev.padLeft != r.padLeft || prev.padRight != r.padRight) {
-                setPadding((r.padLeft * d).roundToInt(), 0, (r.padRight * d).roundToInt(), 0)
+            if (prev == null || prev.padLeft != r.padLeft || prev.padRight != r.padRight || prev.padTop != r.padTop ||
+                prev.padBottom != r.padBottom || prev.multiline != r.multiline
+            ) {
+                // single-line text is centred vertically; multi-line text starts under the top padding
+                val (top, bottom) = if (r.multiline) (r.padTop * d).roundToInt() to (r.padBottom * d).roundToInt() else 0 to 0
+                setPadding((r.padLeft * d).roundToInt(), top, (r.padRight * d).roundToInt(), bottom)
             }
             if (prev == null || prev.fontPx != r.fontPx || prev.weight != r.weight || prev.font != r.font || prev.letterSpacing != r.letterSpacing) {
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, r.fontPx * d)
                 typeface = typeface(r).first
                 letterSpacing = if (r.fontPx > 0f) r.letterSpacing / r.fontPx else 0f
             }
-            if (prev == null || prev.secure != r.secure || prev.keyboard != r.keyboard) {
+            // multi-line text keeps the core's line height, so wrapping and height agree
+            if (r.multiline && android.os.Build.VERSION.SDK_INT >= 28 && (prev == null || prev.lineHeight != r.lineHeight || !prev.multiline)) {
+                lineHeight = (r.lineHeight * d).roundToInt()
+            }
+            if (prev == null || prev.secure != r.secure || prev.keyboard != r.keyboard || prev.multiline != r.multiline) {
+                isSingleLine = !r.multiline
+                gravity = if (r.multiline) Gravity.TOP or Gravity.START else Gravity.CENTER_VERTICAL or Gravity.START
+                imeOptions = if (r.multiline) EditorInfo.IME_ACTION_NONE else EditorInfo.IME_ACTION_DONE
                 inputType = when {
+                    r.multiline -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
                     r.secure -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                     r.keyboard == 1 -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
                     r.keyboard == 2 -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
